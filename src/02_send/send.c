@@ -53,7 +53,7 @@ static void ng_init_port(struct rte_mempool *mbuf_pool) {
 	struct rte_eth_conf port_conf = port_conf_default;
 	rte_eth_dev_configure(gDpdkPortId, num_rx_queues, num_tx_queues, &port_conf);
 
-	// 设置哪一个队列去接收数据, 128是队列承载的数据包最大数量
+	// 设置哪一个队列去接收数据, 1024是队列承载的数据包最大数量
 	if (rte_eth_rx_queue_setup(gDpdkPortId, 0 , 1024, 
 		rte_eth_dev_socket_id(gDpdkPortId),NULL, mbuf_pool) < 0) {
 
@@ -63,7 +63,7 @@ static void ng_init_port(struct rte_mempool *mbuf_pool) {
 	// 启动tx队列,tx队列的初始化
 #if ENABLE_SEND
 	struct rte_eth_txconf txq_conf = dev_info.default_txconf;
-	txq_conf.offloads = port_conf.rxmode.offloads; // 上面的设置即接收的包多大发送就发多大的
+	txq_conf.offloads = port_conf.rxmode.offloads; // 上面的设置:即接收的包多大就发多大的数据包
 	if (rte_eth_tx_queue_setup(gDpdkPortId, 0 , 1024, // 参数为: 对应网口,对应的队列,队列最大包数量,socket id,send的配置
 		rte_eth_dev_socket_id(gDpdkPortId), &txq_conf) < 0) {
 		
@@ -80,7 +80,7 @@ static void ng_init_port(struct rte_mempool *mbuf_pool) {
 
 }
 
-// 构建一个最小的udp包,data是要发送的udp的payload,
+// 构建一个最小的udp包,data是要发送的udp的payload
 static int ng_encode_udp_pkt(uint8_t *msg, unsigned char *data, uint16_t total_len) {
 
 	// encode 构建udp包
@@ -131,7 +131,7 @@ static int ng_encode_udp_pkt(uint8_t *msg, unsigned char *data, uint16_t total_l
 	return 0;
 }
 
-// 发送数据包,第一个参数:内存buffer,payload,length数据(payload)长度
+// 发送数据包,参数分别为:内存buffer,payload,length数据(payload)长度
 static struct rte_mbuf * ng_send(struct rte_mempool *mbuf_pool, uint8_t *data, uint16_t length) {
 
 	// mempool --> mbuf(从mempool里获取数据buffer流)
@@ -209,7 +209,7 @@ int main(int argc, char *argv[]) {
 #endif
 
 				uint16_t length = ntohs(udphdr->dgram_len); // 两个字节以上都要转换ntohs
-				*((char*)udphdr + length) = '\0'; // 最后一段置为0
+				*((char*)udphdr + length) = '\0'; // 最后一字节置为'\0'即结束符
 				// 打印接收到的udp数据
 				struct in_addr addr;
 				addr.s_addr = iphdr->src_addr;
@@ -227,7 +227,7 @@ int main(int argc, char *argv[]) {
 				
 #endif
 
-				rte_pktmbuf_free(mbufs[i]); // 放回内存池
+				rte_pktmbuf_free(mbufs[i]); // (释放)mbuf放回内存池
 			}
 			
 		}
