@@ -60,13 +60,13 @@ static uint8_t gDefaultArpMac[RTE_ETHER_ADDR_LEN] = {0xFF, 0xFF, 0xFF, 0xFF, 0xF
 #endif
 
 #if ENABLE_RINGBUFFER
-
+// 管理ring buffer的结构体,只有两个ring buffer.in buffer和out buffer
 struct inout_ring {
 
 	struct rte_ring *in;
 	struct rte_ring *out;
 };
-
+// 单例模式,全局实例rInst
 static struct inout_ring *rInst = NULL;
 
 static struct inout_ring *ringInstance(void) {
@@ -427,6 +427,7 @@ static int pkt_process(void *arg) {
 	while (1) {
 
 		struct rte_mbuf *mbufs[BURST_SIZE];
+		// 线程安全的消费者消费(出队)
 		unsigned num_recvd = rte_ring_mc_dequeue_burst(ring->in, (void**)mbufs, BURST_SIZE, NULL);
 		
 		unsigned i = 0;
@@ -460,7 +461,7 @@ static int pkt_process(void *arg) {
 
 						//rte_eth_tx_burst(gDpdkPortId, 0, &arpbuf, 1);
 						//rte_pktmbuf_free(arpbuf);
-
+						// 带有rte_eth_tx_burst改成全改成入队即可.放入到out buffer中处理
 						rte_ring_mp_enqueue_burst(ring->out, (void**)&arpbuf, 1, NULL);
 
 					} else if (ahdr->arp_opcode == rte_cpu_to_be_16(RTE_ARP_OP_REPLY)) {
@@ -1074,13 +1075,14 @@ int main(int argc, char *argv[]) {
 #endif
 
 #if ENABLE_RINGBUFFER
-
+	// 创建ring buffer并初始化
 	struct inout_ring *ring = ringInstance();
-	if (ring == NULL) {
+	if (ring == NULL) { // 初始化失败,差错处理
 		rte_exit(EXIT_FAILURE, "ring buffer init failed\n");
 	}
 
 	if (ring->in == NULL) {
+		// 内存中创建一个ring,第一个参数ring的名字,第二个参数ring的大小,第三个参数网口id,第四个参数是flag表明是单生产者或多生产者
 		ring->in = rte_ring_create("in ring", RING_SIZE, rte_socket_id(), RING_F_SP_ENQ | RING_F_SC_DEQ);
 	}
 	if (ring->out == NULL) {
@@ -1111,16 +1113,17 @@ int main(int argc, char *argv[]) {
 		if (num_recvd > BURST_SIZE) {
 			rte_exit(EXIT_FAILURE, "Error receiving from eth\n");
 		} else if (num_recvd > 0) {
-
+			// 接收到的大于0,入队rx队列
 			rte_ring_sp_enqueue_burst(ring->in, (void**)rx, num_recvd, NULL);
 		}
-
+		// 这里rx保存接收数据包的mbuf应该在用户态协议栈甚至于应用程序释放
 		
 		// tx
 		struct rte_mbuf *tx[BURST_SIZE];
+		// 从out buffer中取出(出队),发送数据包
 		unsigned nb_tx = rte_ring_sc_dequeue_burst(ring->out, (void**)tx, BURST_SIZE, NULL);
 		if (nb_tx > 0) {
-
+			// tx是要发送的包,消费完直接释放mbuf
 			rte_eth_tx_burst(gDpdkPortId, 0, tx, nb_tx);
 
 			unsigned i = 0;
