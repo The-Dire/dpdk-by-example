@@ -641,7 +641,7 @@ static struct localhost * get_hostinfo_fromip_port(uint32_t dip, uint16_t port, 
 }
 
 // 因为arp协议存在知道ip就能查到对应的mac,所以该结构体没有mac字段
-struct offload { // 用来组装udp数据包
+struct offload { // 用来组装udp数据包,理解为udp流(连接)
 	uint32_t sip; // 源ip
 	uint32_t dip; // 目的ip
 
