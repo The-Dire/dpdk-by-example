@@ -1,0 +1,15 @@
+netassist
+
+在windows主机delete掉arp，无法发送消息到虚拟机的dpdk程序
+netsh i i delete neighbors 22
+
+添加arp
+netsh -c i i add neighbors 22 192.168.0.119 00-0c-29-18-ef-9d
+
+实现协议栈不能要求能接收到协议需要对端维护一个静态的arp表,需要自己实现arp协议
+
+实现了arp response后,windows端ipconfig没用虚拟机对应网卡的arp地址,但是发送消息后由于虚拟机发送了arp response自动添加上了arp表
+
+
+arp -a没有119的地址
+ping一下该ip再arp -a会自动添加上
