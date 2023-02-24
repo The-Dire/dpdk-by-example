@@ -11,13 +11,13 @@
 
 #define BURST_SIZE	32
 
-int gDpdkPortId = 0; // 端口id
+int g_dpdk_port_id = 0; // 端口id
 // 端口默认信息
 static const struct rte_eth_conf port_conf_default = {
 	.rxmode = {.max_rx_pkt_len = RTE_ETHER_MAX_LEN }
 };
 // 绑定网卡
-static void ng_init_port(struct rte_mempool *mbuf_pool) {
+static void ht_init_port(struct rte_mempool *mbuf_pool) {
 
 	uint16_t nb_sys_ports= rte_eth_dev_count_avail(); // 1. 检测端口是否合法,是否设置
 	if (nb_sys_ports == 0) {
@@ -30,17 +30,17 @@ static void ng_init_port(struct rte_mempool *mbuf_pool) {
 	const int num_rx_queues = 1; // 最多8个
 	const int num_tx_queues = 0;
 	struct rte_eth_conf port_conf = port_conf_default;
-	rte_eth_dev_configure(gDpdkPortId, num_rx_queues, num_tx_queues, &port_conf);
+	rte_eth_dev_configure(g_dpdk_port_id, num_rx_queues, num_tx_queues, &port_conf);
 
 	// 设置哪一个队列去接收数据, 128是队列承载的数据包最大数量
-	if (rte_eth_rx_queue_setup(gDpdkPortId, 0 , 128, 
-		rte_eth_dev_socket_id(gDpdkPortId),NULL, mbuf_pool) < 0) {
+	if (rte_eth_rx_queue_setup(g_dpdk_port_id, 0 , 128, 
+		rte_eth_dev_socket_id(g_dpdk_port_id),NULL, mbuf_pool) < 0) {
 
 		rte_exit(EXIT_FAILURE, "Could not setup RX queue\n");
 
 	}
 	// 启动接收队列
-	if (rte_eth_dev_start(gDpdkPortId) < 0 ) {
+	if (rte_eth_dev_start(g_dpdk_port_id) < 0 ) {
 		rte_exit(EXIT_FAILURE, "Could not start\n");
 	}
 
@@ -62,14 +62,14 @@ int main(int argc, char *argv[]) {
 		rte_exit(EXIT_FAILURE, "Could not create mbuf pool\n");
 	}
 
-	ng_init_port(mbuf_pool);
+	ht_init_port(mbuf_pool);
 
 	while (1) {
 
 		struct rte_mbuf *mbufs[BURST_SIZE];
 		// 第一个参数为端口id(对应网络适配器),第二个参数是指定对应队列,第三个参数是mbufs从内存池里分配的数据
 		// 接收数据包,最大数据包数量在ng_init_port中rte_eth_rx_queue_setup设置,设置为128
-		unsigned num_recvd = rte_eth_rx_burst(gDpdkPortId, 0, mbufs, BURST_SIZE);
+		unsigned num_recvd = rte_eth_rx_burst(g_dpdk_port_id, 0, mbufs, BURST_SIZE);
 		if (num_recvd > BURST_SIZE) {
 			rte_exit(EXIT_FAILURE, "Error receiving from eth\n");
 		}
