@@ -35,6 +35,10 @@ nat网卡作为ssh连接的网卡。
 
 进入usertools目录然后执行`dpdk-setup.sh`脚本。
 
+输入39执行编译:
+
+![](./resource/complier.png)
+
 #### 5.设置dpdk相关的环境变量
 
 
@@ -55,6 +59,7 @@ export RTE_TARGET=x86_64-native-linux-gcc
 输入47,然后再输入2M的hugepages的个数,一般为1024即分配2GB的空间给dpdk。
 
 操作如下图:
+
 ![](./resource/huge_page.png)
 
 - 绑定igb_uio到网卡的操作为:
@@ -68,13 +73,14 @@ export RTE_TARGET=x86_64-native-linux-gcc
 
 ![](./resource/bind_core.png)
 
-同时可以退出并通过脚本进行绑定,通过如下两个命令.
+当然可以直接通过脚本进行绑定,通过如下两个命令.
 
 ```bash
 ifconfig eth0 down
 ./usertools/dpdk-devbind.py --bind=igb_uio eth0
 ```
 dpdk-devbind.py还有以下几个功能:
+
 ```bash
 # 显示所有网卡的状态
 dpdk-devbind.py --status
@@ -92,12 +98,14 @@ dpdk-devbind.py -b ixgbe 02:00.0 02:00.1
 
 进入example/helloworld目录
 路径如下图:
+
 ![](./resource/example_path.png)
 
 直接make,或者通过`gcc -o helloword main.c -I /usr/local/include/dpdk/ -ldpdk -lpthread -
 lnuma -ldl`即可编译该程序。
 
 输入以下命令运行(最好加入sudo运行):
+
 ```bash
 ./helloworld -l 0-3 -n 4
 ```
@@ -105,6 +113,31 @@ lnuma -ldl`即可编译该程序。
 参数-l是指该程序运行在哪几个(cpu)核心列表,是介于0和128之间的数值。-n指定内存通道数。
 
 输出如下,注helloworld程序要成功运行需要绑定dpdk的vfio驱动:
+
 ![](./resource/helloworld.png)
 
 上述即为dpdk的安装流程,新版本和老版本的dpdk安装过程都是类似的。
+
+dpdk更新的版本没有包含驱动需要取网站下载,安装教程如下:
+
+#### 8. 手工安装新版本的dpdk
+
+```shell
+tar xJf dpdk-<version>.tar.xz
+cd dpdk-<version>
+meson -Denable_kmods=true build # enable_kmods要生成dpdk依赖的内核模块
+cd build
+ninja
+ninja install # 需要root权限
+ldconfig      # 需要root权限
+```
+
+去掉已经加载的uio和igb_uio驱动然后加载igb_uio,由于高版本的dpdk没有驱动了需要去 http://git.dpdk.org/dpdk-kmods/ 下载
+
+```shell
+git clone http://dpdk.org/git/dpdk-kmods # 下载dpdk的内核模块
+cd dpdk-kmods/linux/igb_uio
+make # 编译igb_uio驱动
+modprobe uio       # 加载uio
+insmod igb_uio.ko  # 加载igb_uio
+```
