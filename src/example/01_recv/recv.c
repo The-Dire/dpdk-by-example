@@ -55,7 +55,7 @@ int main(int argc, char *argv[]) {
 		rte_exit(EXIT_FAILURE, "Error with EAL init\n");
 		
 	}
-	// 确定内存池,收发的数据都要放入其中
+	// 构造内存池,收发的数据都要放入其中
 	struct rte_mempool *mbuf_pool = rte_pktmbuf_pool_create("mbuf pool", NUM_MBUFS,
 		0, 0, RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
 	if (mbuf_pool == NULL) {
@@ -76,15 +76,15 @@ int main(int argc, char *argv[]) {
 		// 操作数据包
 		unsigned i = 0;
 		for (i = 0;i < num_recvd;i ++) {
-			// 从mbufs[i]内存中取出数据包
+			// 从mbufs[i]内存中取出数据包,先解析Ethernet头
 			struct rte_ether_hdr *ehdr = rte_pktmbuf_mtod(mbufs[i], struct rte_ether_hdr*);
 			if (ehdr->ether_type != rte_cpu_to_be_16(RTE_ETHER_TYPE_IPV4)) { // 判断是否是ip协议
 				continue; // 不是ip协议不做处理
 			}
-			// 是ip协议取出来
+			// 解析ip协议头部
 			struct rte_ipv4_hdr *iphdr =  rte_pktmbuf_mtod_offset(mbufs[i], struct rte_ipv4_hdr *, 
 				sizeof(struct rte_ether_hdr));
-			// 对udp做处理
+			// 对是udp的包做处理
 			if (iphdr->next_proto_id == IPPROTO_UDP) {
 				// udp的头
 				struct rte_udp_hdr *udphdr = (struct rte_udp_hdr *)(iphdr + 1);

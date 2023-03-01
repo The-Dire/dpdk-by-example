@@ -8,6 +8,8 @@ dpdk实战例子学习指南
 
 [2.dpdk实现echo服务器](doc/first/dpdk_echo_udp.md)
 
+[3.dpdk常用核心api使用教程](doc/first/dpdk_api.md)
+
 ### 第二部分:dpdk实现协议栈
 
 ### 第三部分:dpdk源码分析
