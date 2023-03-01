@@ -141,3 +141,107 @@ make # 编译igb_uio驱动
 modprobe uio       # 加载uio
 insmod igb_uio.ko  # 加载igb_uio
 ```
+#### 9.dpdk使用
+
+##### 1.dpdk使用前配置
+
+1. 临时配置1024个2M的大页内存
+
+首先分配1024个2M的大页内存,然后创建一个挂载目录,并将大页文件系统挂载至挂载目录上,等待程序使用。
+
+对于单numa设备使用如下命令:
+
+如果是分配1G的大页内存就是在hugepages-1048576kB上分配。
+
+```shell
+echo 1024 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
+mkdir /mnt/huge
+mount –t hugetlbfs nodev /mnt/huge
+```
+
+对于双numa设备使用如下:
+
+```shell
+echo 1024 > /sys/devices/system/node/node0/hugepages/hugepages-2048kB/nr_hugepages
+echo 1024 > /sys/devices/system/node/node1/hugepages/hugepages-2048kB/nr_hugepages
+mkdir /mnt/huge
+mount –t hugetlbfs nodev /mnt/huge
+```
+
+2. 永久配置大页内存
+
+通过修改grub2.cfg,增加内核启动参数,实现系统启动后自动分配大页内存.
+
+找到类似如下语句
+
+```vim
+linux16 /vmlinuz-3.10.0-327.el7.x86_64 root=UUID=89757b2e-b7c1-43a6-b20b-0e98ed458e48 ro crashkernel=auto rhgb quiet LANG=zh_CN.UTF-8
+```
+
+若配置1G大页内存则在末尾处添加
+
+```vim
+default_hugepagesz=1G hugepagesz=1G hugepages=4
+```
+
+若配置2M大页内存则在末尾处添加
+
+```vim
+default_hugepagesz=2M hugepagesz=2M hugepages=1024
+```
+
+3. 加载uio驱动
+
+在运行DPDK程序之前,需要将所需的用户态驱动加载到内核。DPDK提供了igb_uio模块,可通过如下命令加载(和其他内核模块加载方式相同)
+
+```shell
+insmod igb_uio.ko 
+```
+
+4. 加载VFIO驱动
+
+DDPDK程序选择使用VFIO时,需要加载vfio-pci模块,通过如下命令加载
+
+```shell
+modprobe vfio-pci
+```
+
+
+##### l2fwd的使用
+
+```shell
+./l2fwd -c 1 -n 2 -- -q 1 -p 1
+```
+
+运行参数解析:
+
+```
+-c : 设置要运行的内核的十六进制位掩码,此处使用1个核心(其值位十六进制位掩码)
+-l : 要运行的核心列表
+-n : 每个CPU的内存通道数
+--  : 表示之后为次参数
+-q : 每个CPU管理的队列数，这里设置为一个队列
+-p : PORTMASK: 要使用的端口的16进制位图，此处设置为第一个端口
+```
+
+##### kni的使用
+
+```shell
+./kni [EAL options] -- -p PORTMASK [-P] [-m] [–config=”(port, lcore_rx, lcore_tx, lcore_kthread…) [, (port, lcore_rx, lcore_tx, lcore_kthread…) ]” ]
+```
+
+```
+-p PORTMASK : 要使用的端口的16进制位图
+-P : 设置的话意味着混杂模式,以便不区分以太网目的MAC地址,接收所有报文。不设置此选项,仅目的MAC地址等于接口MAC地址的报文被接收。
+-m : 使能监控模式并更新以太网链路状态。此选项需要启动一个DPDK线程定期检查物理接口链路状态,同步相应的KNI虚拟网口状态。意味着当以太网链路down的时候,KNI虚拟接口将自动禁用,反之,自动启用。
+EAL选项核心掩码-c或者-l核心列表参数必须包含有以上的lcore_rx和lcore_tx参数中指定的核心,但是,不需要包含lcore_thread参数指定的核心,因为其实rte_kni模块中用来绑定内核线程的核心（不能超出CPU核心数量）
+```
+
+示例：
+以下命令首先以多线程模式加载rte_kni内核模块。其次,kni应用指定两个接口（-p 0x3）启动;根据--config参数可知,接口0（0,4,6,8）使用核心4运行接收任务,核心6运行发送任务,并且创建一个KNI虚拟接口vEth0_0,启动一个内核处理线程绑定在核心8上。类似的接口1（0,5,7,9）使用核心5运行接收任务,核心7运行发送任务,并且创建一个KNI虚拟接口vEth1_0,启动一个内核处理线程绑定在核心9上.
+
+```shell
+rmmod rte_kni
+insmod rte_kni.ko
+./kni -l 4-7 -n 4 -- -P -p 0x3 -m --config="(0,4,6,8),(1,5,7,9)"
+```
