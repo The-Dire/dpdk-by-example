@@ -25,7 +25,7 @@ static void ht_init_port(struct rte_mempool *mbuf_pool) {
 	}
 	// 默认网卡信息获取
 	struct rte_eth_dev_info dev_info;
-	rte_eth_dev_info_get(gDpdkPortId, &dev_info);
+	rte_eth_dev_info_get(g_dpdk_port_id, &dev_info);
 	// 配置rx队列和tx队列的数量
 	const int num_rx_queues = 1; // 最多8个
 	const int num_tx_queues = 0;
