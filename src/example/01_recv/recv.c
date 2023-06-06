@@ -23,21 +23,21 @@ static void ht_init_port(struct rte_mempool *mbuf_pool) {
   if (nb_sys_ports == 0) {
     rte_exit(EXIT_FAILURE, "No Supported eth found\n");
   }
-  // 默认网卡信息获取
+  // 2. 默认网卡信息获取
   struct rte_eth_dev_info dev_info;
   rte_eth_dev_info_get(g_dpdk_port_id, &dev_info);
-  // 配置rx队列和tx队列的数量
+  // 3. 配置rx队列和tx队列的数量
   const int num_rx_queues = 1; // 最多8个
   const int num_tx_queues = 0;
   struct rte_eth_conf port_conf = port_conf_default;
   rte_eth_dev_configure(g_dpdk_port_id, num_rx_queues, num_tx_queues, &port_conf);
 
-  // 设置哪一个队列去接收数据, 128是队列承载的数据包最大数量
+  // 4. 设置哪一个队列去接收数据, 128是队列承载的数据包最大数量
   if (rte_eth_rx_queue_setup(g_dpdk_port_id, 0 , 128, 
     rte_eth_dev_socket_id(g_dpdk_port_id),NULL, mbuf_pool) < 0) {
     rte_exit(EXIT_FAILURE, "Could not setup RX queue\n");
   }
-  // 启动接收队列
+  // 5. 启动接收队列(在这里只有接收队列,其实是启动g_dpdk_port_id这个端口)
   if (rte_eth_dev_start(g_dpdk_port_id) < 0 ) {
     rte_exit(EXIT_FAILURE, "Could not start\n");
   }
