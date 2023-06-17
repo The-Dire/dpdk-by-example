@@ -172,8 +172,8 @@ recv程序打印如下:
 
 当前了解了dpdk程序的基本结构，后面将总结dpdk核心的几个api。现在基本上dpdk核心api都讲完了，只剩下dpdk ring相关api还未讲解。
 
-上面的代码还存在一个很严重的问题，缺少arp request和arp reply流程即缺少。
+上面的代码还存在一个很严重的问题，缺少arp request和arp reply流程即缺少当其他主机发送free arp到程序时mac地址告知这一其他主机的功能(arp reply)以及自己发送free arp到其他主机(arp request)这一功能。
 
 一般来说带协议栈的设备都具备支持无回报(免费)ARP包(free arp)的发送来让其他主机获取到本机的mac地址从而让本机能够被访问。
 
-当后续实现了udp reply后我将实现建议的arp处理。
+当后续实现了udp reply后我将实现针对arp的处理。
