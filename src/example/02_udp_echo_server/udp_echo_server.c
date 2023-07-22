@@ -48,6 +48,11 @@ int g_dpdk_port_id = 0; // 端口id
 static const struct rte_eth_conf port_conf_default = {
   .rxmode = {.max_rx_pkt_len = RTE_ETHER_MAX_LEN }
 };
+// 点分十进制ipv4地址变为数字ipv4地址
+#define MAKE_IPV4_ADDR(a, b, c, d) (a + (b<<8) + (c<<16) + (d<<24))
+// 本地ip,即dpdk端口的ip(由于dpdk绕过了内核协议栈所以需要自己设置)
+static uint32_t g_local_ip = MAKE_IPV4_ADDR(10, 66 ,24, 68);
+
 // 六元组sip,dip,smac,dmac,sport,dport用来发送数据包,由于本项目只用于实验所以以全局变量形式
 static uint32_t g_src_ip;
 static uint32_t g_dst_ip;
@@ -149,7 +154,7 @@ static struct rte_mbuf * ht_send_udp(struct rte_mempool *mbuf_pool, uint8_t *dat
 
   struct rte_mbuf *mbuf = rte_pktmbuf_alloc(mbuf_pool);
   if (!mbuf) {
-    rte_exit(EXIT_FAILURE, "rte_pktmbuf_alloc\n");
+    rte_exit(EXIT_FAILURE, "ht_send_udp: rte_pktmbuf_alloc\n");
   }
 
   mbuf->pkt_len = total_len; // 包的长度
@@ -158,6 +163,49 @@ static struct rte_mbuf * ht_send_udp(struct rte_mempool *mbuf_pool, uint8_t *dat
   uint8_t *pktdata = rte_pktmbuf_mtod(mbuf, uint8_t*);
 
   ht_encode_udp_packet(pktdata, data, total_len);
+
+  return mbuf;
+}
+
+// 构建arp response包
+static int ht_encode_arp_pkt(uint8_t *msg, uint8_t *dst_mac, uint32_t sip, uint32_t dip) {
+  // 1 ethhdr
+  struct rte_ether_hdr *eth = (struct rte_ether_hdr *)msg;
+  rte_memcpy(eth->s_addr.addr_bytes, g_src_mac, RTE_ETHER_ADDR_LEN);
+  rte_memcpy(eth->d_addr.addr_bytes, dst_mac, RTE_ETHER_ADDR_LEN);
+  eth->ether_type = htons(RTE_ETHER_TYPE_ARP);
+
+  // 2 arp 
+  struct rte_arp_hdr *arp = (struct rte_arp_hdr *)(eth + 1);
+  arp->arp_hardware = htons(1);
+  arp->arp_protocol = htons(RTE_ETHER_TYPE_IPV4);
+  arp->arp_hlen = RTE_ETHER_ADDR_LEN; // 硬件地址长度
+  arp->arp_plen = sizeof(uint32_t); // 软件地址长度
+  arp->arp_opcode = htons(2); // 2为response,1为request
+  rte_memcpy(arp->arp_data.arp_sha.addr_bytes, g_src_mac, RTE_ETHER_ADDR_LEN);
+  rte_memcpy(arp->arp_data.arp_tha.addr_bytes, dst_mac, RTE_ETHER_ADDR_LEN);
+
+  arp->arp_data.arp_sip = sip;
+  arp->arp_data.arp_tip = dip;
+  
+  return 0;
+}
+
+// 发送arp response
+static struct rte_mbuf *ht_send_arp(struct rte_mempool *mbuf_pool, uint8_t *dst_mac, uint32_t sip, uint32_t dip) {
+  // 14 + 28, eth头14字节,arp头28字节
+  const unsigned total_length = sizeof(struct rte_ether_hdr) + sizeof(struct rte_arp_hdr);
+
+  struct rte_mbuf *mbuf = rte_pktmbuf_alloc(mbuf_pool);
+  if (!mbuf) {
+    rte_exit(EXIT_FAILURE, "ht_send_arp: rte_pktmbuf_alloc\n");
+  }
+
+  mbuf->pkt_len = total_length;
+  mbuf->data_len = total_length;
+
+  uint8_t *pkt_data = rte_pktmbuf_mtod(mbuf, uint8_t *);
+  ht_encode_arp_pkt(pkt_data, dst_mac, sip, dip);
 
   return mbuf;
 }
@@ -176,6 +224,8 @@ int main(int argc, char *argv[]) {
   }
 
   ht_init_port(mbuf_pool);
+  // 获取网卡mac地址,用于ng_encode_udp_pkt函数中组建ether头
+	rte_eth_macaddr_get(g_dpdk_port_id, (struct rte_ether_addr *)g_src_mac);
 
   while (1) {
     struct rte_mbuf *mbufs[BURST_SIZE];
@@ -190,7 +240,29 @@ int main(int argc, char *argv[]) {
     for (i = 0;i < num_recvd;i ++) {
       // 从mbufs[i]内存中取出数据包,先解析Ethernet头
       struct rte_ether_hdr *ehdr = rte_pktmbuf_mtod(mbufs[i], struct rte_ether_hdr*);
-      if (ehdr->ether_type != rte_cpu_to_be_16(RTE_ETHER_TYPE_IPV4)) { // 判断是否是ip协议
+      
+      // 对端发送的是arp协议,对arp进行解析
+      if (ehdr->ether_type == rte_htons(RTE_ETHER_TYPE_ARP)) {
+        // 获取arp头
+        struct rte_arp_hdr *arp_hdr = rte_pktmbuf_mtod_offset(mbufs[i], 
+            struct rte_arp_hdr *, sizeof(struct rte_ether_hdr));
+        
+        char ip_buf[16] = {0};
+        printf("arp ---> src: %s ", inet_ntoa2(arp_hdr->arp_data.arp_tip, ip_buf));
+        printf(" local: %s \n", inet_ntoa2(g_local_ip, ip_buf));
+        // 由于arp request是广播,判断目标地址相同才返回arp response
+        if (arp_hdr->arp_data.arp_tip == g_local_ip) {
+          // 接收到arp request包后返回arp response。注:request里的源ip是response里的目的ip
+          struct rte_mbuf *arp_buf = ht_send_arp(mbuf_pool, arp_hdr->arp_data.arp_sha.addr_bytes, 
+            arp_hdr->arp_data.arp_tip, arp_hdr->arp_data.arp_sip);
+          rte_eth_tx_burst(g_dpdk_port_id, 0, &arp_buf, 1);
+          rte_pktmbuf_free(arp_buf);
+          rte_pktmbuf_free(mbufs[i]);
+        }
+        continue;
+      }
+      
+      if (ehdr->ether_type != rte_htons(RTE_ETHER_TYPE_IPV4)) { // 判断是否是ip协议
         continue; // 不是ip协议不做处理
       }
       // 解析ip协议头部
