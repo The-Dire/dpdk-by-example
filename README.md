@@ -10,7 +10,11 @@ dpdk实战例子学习指南
 
 [3.dpdk实现udp echo服务器](doc/first/dpdk_echo_server.md)
 
-[4.dpdk常用核心api使用教程](doc/first/dpdk_api.md)
+[补充:arp基础知识](doc/first/arp_basic.md)
+
+[4.dpdk实现arp响应和icmp的reply](doc/first/arp_request_response.md)
+
+[dpdk常用核心api使用教程](doc/first/dpdk_api.md)
 
 ### 2.dpdk实现简单的协议栈
 
