@@ -5,7 +5,7 @@
 APP = dpdk_arptable
 
 # all source are stored in SRCS-y
-SRCS-y := arptable.c
+SRCS-y := arptable_implement.c
 
 # Build using pkg-config variables if possible
 ifeq ($(shell pkg-config --exists libdpdk && echo 0),0)
