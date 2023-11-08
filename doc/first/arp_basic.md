@@ -40,7 +40,7 @@ ARP（Address Resolution Protocol，地址解析协议）是用来将IP地址解
 
 ### Proxy ARP
 
-这个比较复杂暂时掠过
+这个比较复杂暂时略过。
 
 ## arp的解析
 
