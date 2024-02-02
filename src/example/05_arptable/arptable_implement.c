@@ -3,7 +3,7 @@
 #include <rte_mbuf.h>
 
 #include <rte_malloc.h>
-#include <rte_timer.h> // 定时器,用来定时发送free arp
+#include <rte_timer.h> // 定时器,用来定时发送广播 arp
 
 #include <stdio.h>
 #include <netinet/in.h>
@@ -13,7 +13,7 @@
 #define NUM_MBUFS (4096-1)
 
 #define BURST_SIZE	32
-// 每隔TIMER_RESOLUTION_CYCLES广播arp(发送free arp)
+// 每隔TIMER_RESOLUTION_CYCLES广播arp(发送广播 arp)
 #define TIMER_RESOLUTION_CYCLES 120000000000ULL // 10ms * 1000 = 10s * 6 
 
 /* utils */

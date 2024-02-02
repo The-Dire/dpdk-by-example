@@ -11,7 +11,7 @@
 // arp lists
 LIST_HEAD(arp_table); // arp table的初始化,其实arp_table是头结点。
 int arp_count = 0; // 记录表中的arp entry个数
-// arp表中实例结构,通过指针链成双向链表最为arp表
+// arp表中实例结构,通过指针链成双向链表。整个链表即为arp表
 typedef struct arp_entry_t {
   uint32_t ip;                          // ip地址
   uint8_t hw_addr[RTE_ETHER_ADDR_LEN];  // mac地址
