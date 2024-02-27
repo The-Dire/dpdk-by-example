@@ -14,7 +14,9 @@ dpdk实战例子学习指南
 
 [4.dpdk实现arp响应和icmp的reply](doc/first/04_arp_request_response.md)
 
-[5.实现free arp以及arp表相关功能](doc/first/05_arp_table.md)
+[5.实现arp广播以及arp表相关功能](doc/first/05_arp_table.md)
+
+
 
 [dpdk常用核心api使用教程](doc/first/06_dpdk_api.md)
 
@@ -24,9 +26,14 @@ dpdk实战例子学习指南
 
 ### 4.dpdk源码分析
 
+[numa知识扫盲](doc/source_doc/00_numa_basic.md)
+
+[dpdk多线程浅析](doc/source_doc/dpdk_multi_threads.md)
+
 ### 5.dpdk多语言:nff-go框架从使用到源码分析
 
 ## 杂项
 
 ### dpvs源码分析
 
+### 虚拟化相关知识
