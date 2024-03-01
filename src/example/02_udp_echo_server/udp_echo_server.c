@@ -224,13 +224,13 @@ int main(int argc, char *argv[]) {
   }
 
   ht_init_port(mbuf_pool);
-  // 获取网卡mac地址,用于ng_encode_udp_pkt函数中组建ether头
+  // 获取网卡mac地址,用于encode_udp_pkt函数中组建ether头
 	rte_eth_macaddr_get(g_dpdk_port_id, (struct rte_ether_addr *)g_src_mac);
 
   while (1) {
     struct rte_mbuf *mbufs[BURST_SIZE];
     // 第一个参数为端口id(对应网络适配器),第二个参数是指定对应队列,第三个参数是mbufs从内存池里分配的数据
-    // 接收数据包,最大数据包数量在ng_init_port中rte_eth_rx_queue_setup设置,设置为128
+    // 接收数据包,最大数据包数量在init_port中rte_eth_rx_queue_setup设置,设置为128
     unsigned num_recvd = rte_eth_rx_burst(g_dpdk_port_id, 0, mbufs, BURST_SIZE);
     if (num_recvd > BURST_SIZE) {
       rte_exit(EXIT_FAILURE, "Error receiving from eth\n");

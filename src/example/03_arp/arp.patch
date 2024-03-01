@@ -72,7 +72,7 @@ index cdac4bf..030c37e 100644
    }
  
    ht_init_port(mbuf_pool);
-+  // 获取网卡mac地址,用于ng_encode_udp_pkt函数中组建ether头
++  // 获取网卡mac地址,用于encode_udp_pkt函数中组建ether头
 +	rte_eth_macaddr_get(g_dpdk_port_id, (struct rte_ether_addr *)g_src_mac);
  
    while (1) {

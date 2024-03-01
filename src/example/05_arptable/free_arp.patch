@@ -143,7 +143,7 @@ index 08cfe66..7443762 100644
    // dpdk环境初始化,巨页,内存,cpu亲和等的设置
    if (rte_eal_init(argc, argv) < 0) {
 @@ -312,6 +365,18 @@ int main(int argc, char *argv[]) {
-   // 获取网卡mac地址,用于ng_encode_udp_pkt函数中组建ether头
+   // 获取网卡mac地址,用于encode_udp_pkt函数中组建ether头
    rte_eth_macaddr_get(g_dpdk_port_id, (struct rte_ether_addr *)g_src_mac);
  
 +  /* 定时器初始化 */
