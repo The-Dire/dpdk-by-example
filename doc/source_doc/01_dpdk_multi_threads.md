@@ -64,6 +64,16 @@ rte_eal_mp_remote_launch(l2fwd_launch_one_lcore, NULL, CALL_MASTER);
 
 上图也可以理解为一个DPDK的应用程序的大致执行思路。
 
+初始化检查CPU支持、微架构配置等完成后，执行main()函数。
+
+dpdk程序往往都是这5步:
+
+1. `rte_eal_init()`，核心初始化和启动。其中线程使用的是pthread库，创造线程，并设置CPU亲和性：DPDK通常每个核心固定一个pthread，以避免任务切换的开销。
+2. 然后是 other inits，其余对象的初始化（mbuf、mempool、ring、lpm hash table等）都应该作为主 lcore 上整体应用程序初始化的一部分来完成。
+3. `rte_eal_remote_lauch(func, NULL, lcore_id)`，在每个逻辑核上注册一个回调函数。
+4. `rte_eal_mp_wait_lcore()`，等待各个线程返回。
+5. 执行func函数
+
 另外，由于现网往往有流量潮汐的影响，所以为了寻求灵活的扩展能力，EAL pthread与逻辑核之间允许打破1:1的绑定关系，允许绑定一个特定的lcore ID或者lcore ID组。
 
 ## DPDK的hello world程序解析
