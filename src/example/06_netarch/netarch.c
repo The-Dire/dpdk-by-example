@@ -15,6 +15,7 @@
 #define NUM_MBUFS (4096-1)
 
 #define BURST_SIZE	32
+#define RING_SIZE	1024
 // 每隔TIMER_RESOLUTION_CYCLES广播arp(发送广播 arp)
 #define TIMER_RESOLUTION_CYCLES 120000000000ULL // 10ms * 1000 = 10s * 6 
 
@@ -539,7 +540,7 @@ int main(int argc, char *argv[]) {
   /*end of timer init */
 
   // 创建ring buffer并初始化
-  g_ring = init_global_ring();
+  init_global_ring();
   // q全局队列初始化失败,进行差错处理
   if (g_ring == NULL) {
     rte_exit(EXIT_FAILURE, "ring buffer init failed\n");
