@@ -10,6 +10,11 @@
 
 将内核链表封装成arp表的代码在 [arp.h](../../src/example/05_arptable/arp.h)
 
+本章目的:
+
+1. 实现arp表
+2. 实现arp广播
+
 ## arp表实现
 
 **1.arp表结构如下**:
