@@ -411,8 +411,8 @@ int ht_pkt_process(void *arg) {
             // 接收到arp request包后返回arp response。注:request里的源ip是response里的目的ip
             struct rte_mbuf *arp_buf = ht_send_arp(mbuf_pool, RTE_ARP_OP_REPLY, arp_hdr->arp_data.arp_sha.addr_bytes, 
               arp_hdr->arp_data.arp_tip, arp_hdr->arp_data.arp_sip);
-            //rte_eth_tx_burst(gDpdkPortId, 0, &arpbuf, 1);
-            //rte_pktmbuf_free(arpbuf);
+            //rte_eth_tx_burst(g_dpdk_port_id, 0, &arpbuf, 1);
+            //rte_pktmbuf_free(arp_buf);
             // 带有rte_eth_tx_burst改成全改成入队即可.放入到send ring中处理
             rte_ring_mp_enqueue_burst(send_ring, (void**)&arp_buf, 1, NULL);
             // 处理arp响应的流程(这里对端发送arp reply,这个值要记录到arp表里)
