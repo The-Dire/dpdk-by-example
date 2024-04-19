@@ -1,47 +1,8 @@
-#include <rte_eal.h>
-#include <rte_ethdev.h>
-#include <rte_mbuf.h>
-
-#include <rte_malloc.h>
-#include <rte_timer.h> // 定时器,用来定时发送广播 arp
-
-#include <rte_ring.h> // dpdk 队列库
-
-#include <stdio.h>
-#include <netinet/in.h>
+#include "common.h"
 
 #include "utils.h"
 #include "arp.h"
 
-#define NUM_MBUFS (4096-1)
-
-#define BURST_SIZE	32
-// 每隔TIMER_RESOLUTION_CYCLES广播arp(发送广播 arp)
-#define TIMER_RESOLUTION_CYCLES 120000000000ULL // 10ms * 1000 = 10s * 6 
-
-
-
-int g_dpdk_port_id = 0; // 端口id
-// 端口默认信息
-static const struct rte_eth_conf port_conf_default = {
-  .rxmode = {.max_rx_pkt_len = RTE_ETHER_MAX_LEN }
-};
-// 点分十进制ipv4地址变为数字ipv4地址
-#define MAKE_IPV4_ADDR(a, b, c, d) (a + (b<<8) + (c<<16) + (d<<24))
-// 本地ip,即dpdk端口的ip(由于dpdk绕过了内核协议栈所以需要自己设置)
-static uint32_t g_local_ip = MAKE_IPV4_ADDR(10, 66 ,24, 68);
-
-// 六元组sip,dip,smac,dmac,sport,dport用来发送数据包,由于本项目只用于实验所以以全局变量形式
-static uint32_t g_src_ip;
-static uint32_t g_dst_ip;
-
-static uint8_t g_src_mac[RTE_ETHER_ADDR_LEN];
-static uint8_t g_dst_mac[RTE_ETHER_ADDR_LEN];
-
-static uint16_t g_src_port;
-static uint16_t g_dst_port;
-
-static uint8_t g_default_arp_mac[RTE_ETHER_ADDR_LEN] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
 // 两个ring队列,一个收包队列收包后存入用来解析协议
 // 一个发包队列待发的包存入
@@ -142,12 +103,12 @@ void arp_request_timer_callback(__attribute__((unused)) struct rte_timer *tim,
 }
 /* end of free arp */
 
+// 收包main函数
 int ht_pkt_process(void *arg) {
 
   struct rte_mempool *mbuf_pool = (struct rte_mempool *)arg;
   struct rte_ring *recv_ring = g_ring->recv_ring;
   struct rte_ring *send_ring = g_ring->send_ring;
-  
   
   while (1) {
     struct rte_mbuf *mbufs[BURST_SIZE];
@@ -176,8 +137,10 @@ int ht_pkt_process(void *arg) {
             // 接收到arp request包后返回arp response。注:request里的源ip是response里的目的ip
             struct rte_mbuf *arp_buf = ht_send_arp(mbuf_pool, RTE_ARP_OP_REPLY, arp_hdr->arp_data.arp_sha.addr_bytes, 
               arp_hdr->arp_data.arp_tip, arp_hdr->arp_data.arp_sip);
-            rte_eth_tx_burst(g_dpdk_port_id, 0, &arp_buf, 1);
-            rte_pktmbuf_free(arp_buf);
+            //rte_eth_tx_burst(g_dpdk_port_id, 0, &arpbuf, 1);
+            //rte_pktmbuf_free(arp_buf);
+            // 带有rte_eth_tx_burst改成全改成入队即可.放入到send ring中处理
+            rte_ring_mp_enqueue_burst(send_ring, (void**)&arp_buf, 1, NULL);
             // 处理arp响应的流程(这里对端发送arp reply,这个值要记录到arp表里)
           } else if (arp_hdr->arp_opcode == rte_htons(RTE_ARP_OP_REPLY)) {
             printf("arp --> reply\n");
@@ -264,8 +227,6 @@ int ht_pkt_process(void *arg) {
           struct rte_mbuf *txbuf = ht_send_icmp(mbuf_pool, ehdr->s_addr.addr_bytes,
             iphdr->dst_addr, iphdr->src_addr, icmphdr->icmp_ident, icmphdr->icmp_seq_nb);
 
-          // rte_eth_tx_burst(g_dpdk_port_id, 0, &txbuf, 1);
-          // rte_pktmbuf_free(txbuf);
           rte_ring_mp_enqueue_burst(send_ring, (void**)&txbuf, 1, NULL);
 
           rte_pktmbuf_free(mbufs[i]);

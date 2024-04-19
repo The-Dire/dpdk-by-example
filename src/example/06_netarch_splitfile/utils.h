@@ -1,7 +1,7 @@
 #ifndef __HT_UTILS_H__
 #define __HT_UTILS_H__
 
-#include <inttypes.h>
+#include "common.h"
 
 
 /* utils */

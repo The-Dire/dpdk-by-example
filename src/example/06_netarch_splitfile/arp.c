@@ -1,8 +1,20 @@
 #include "arp.h"
 
+// 查表操作,获取发送arp replay的对端的mac地址
+uint8_t* ht_get_dst_macaddr(uint32_t dip) {
+  struct list_head *cursor;
+  list_for_each(cursor, &arp_table) {
+    arp_entry *tmp = list_entry(cursor, arp_entry, entry);
+    if (dip == tmp->ip) { // dip在表中被查到则找到了
+      return tmp->hw_addr;
+    }
+  }
+  return NULL;
+}
+
 /* arp组包发包相关模块 */
 // 构建arp response包. 自定义opcode 1为request,2为response
-static int ht_encode_arp_pkt(uint8_t *msg, uint16_t opcode, uint8_t *dst_mac, uint32_t sip, uint32_t dip) {
+int ht_encode_arp_pkt(uint8_t *msg, uint16_t opcode, uint8_t *dst_mac, uint32_t sip, uint32_t dip) {
   // 1 ethhdr
   struct rte_ether_hdr *eth = (struct rte_ether_hdr *)msg;
   rte_memcpy(eth->s_addr.addr_bytes, g_src_mac, RTE_ETHER_ADDR_LEN);
@@ -32,7 +44,7 @@ static int ht_encode_arp_pkt(uint8_t *msg, uint16_t opcode, uint8_t *dst_mac, ui
 }
 
 // 发送arp response
-static struct rte_mbuf *ht_send_arp(struct rte_mempool *mbuf_pool, uint16_t opcode, uint8_t *dst_mac, uint32_t sip, uint32_t dip) {
+struct rte_mbuf *ht_send_arp(struct rte_mempool *mbuf_pool, uint16_t opcode, uint8_t *dst_mac, uint32_t sip, uint32_t dip) {
   // 14 + 28, eth头14字节,arp头28字节
   const unsigned total_length = sizeof(struct rte_ether_hdr) + sizeof(struct rte_arp_hdr);
 
@@ -48,5 +60,58 @@ static struct rte_mbuf *ht_send_arp(struct rte_mempool *mbuf_pool, uint16_t opco
   ht_encode_arp_pkt(pkt_data, opcode, dst_mac, sip, dip);
 
   return mbuf;
+}
+
+int ht_arp_in(struct rte_mbuf *arp_mbuf) {
+  // 获取arp头
+  struct rte_arp_hdr *arp_hdr = rte_pktmbuf_mtod_offset(arp_mbuf, 
+      struct rte_arp_hdr *, sizeof(struct rte_ether_hdr));
+  
+  char ip_buf[16] = {0};
+  printf("arp ---> src: %s ", inet_ntoa2(arp_hdr->arp_data.arp_tip, ip_buf));
+  printf(" local: %s \n", inet_ntoa2(g_local_ip, ip_buf));
+  // 由于arp request是广播,判断目标地址相同才返回arp response
+  if (arp_hdr->arp_data.arp_tip == g_local_ip) {
+    if (arp_hdr->arp_opcode == rte_htons(RTE_ARP_OP_REQUEST)) {
+      printf("arp --> request\n");
+      // 接收到arp request包后返回arp response。注:request里的源ip是response里的目的ip
+      struct rte_mbuf *arp_buf = ht_send_arp(mbuf_pool, RTE_ARP_OP_REPLY, arp_hdr->arp_data.arp_sha.addr_bytes, 
+        arp_hdr->arp_data.arp_tip, arp_hdr->arp_data.arp_sip);
+      //rte_eth_tx_burst(g_dpdk_port_id, 0, &arpbuf, 1);
+      //rte_pktmbuf_free(arp_buf);
+      // 带有rte_eth_tx_burst改成全改成入队即可.放入到send ring中处理
+      rte_ring_mp_enqueue_burst(g_ring->send_ring, (void**)&arp_buf, 1, NULL);
+      // 处理arp响应的流程(这里对端发送arp reply,这个值要记录到arp表里)
+    } else if (arp_hdr->arp_opcode == rte_htons(RTE_ARP_OP_REPLY)) {
+      printf("arp --> reply\n");
+      
+      uint8_t *hw_addr = ht_get_dst_macaddr(arp_hdr->arp_data.arp_sip);
+      // 如果接收到了arp reply,但是查表找不到对应的mac地址则插入表中
+      if (hw_addr == NULL) {
+        // 结点初始化
+        arp_entry *new_entry = rte_malloc("arp_entry", sizeof(arp_entry), 0);
+
+        new_entry->ip = arp_hdr->arp_data.arp_sip;
+        rte_memcpy(new_entry->hw_addr, arp_hdr->arp_data.arp_sha.addr_bytes, RTE_ETHER_ADDR_LEN);
+        new_entry->type = 0;
+        // 线程不安全，这里应该改为cas原子操作
+        list_add_tail(&new_entry->entry, &arp_table);
+        arp_count++;
+      }
+
+      struct list_head *iter;
+      list_for_each(iter, &arp_table) {
+        arp_entry *addr = list_entry(iter, arp_entry, entry);
+        char ip_buf[16] = {0};
+
+        print_ethaddr("arp table --> mac: ", (struct rte_ether_addr *)addr->hw_addr);
+
+        printf(" ip : %s \n", inet_ntoa2(addr->ip, ip_buf));
+      }
+
+    }
+    rte_pktmbuf_free(mbufs[i]);
+  }
+  continue;
 }
 /* end of arp */

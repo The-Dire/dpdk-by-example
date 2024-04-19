@@ -1,7 +1,7 @@
 #include "icmp.h"
 
 /* icmp组包发包相关模块 */
-static uint16_t ht_checksum(void *addr, int count) {
+uint16_t ht_checksum(void *addr, int count) {
   
   register long sum = 0;
   uint16_t *ptr = addr;
@@ -23,7 +23,7 @@ static uint16_t ht_checksum(void *addr, int count) {
   return ~sum;
 }
 
-static int ht_encode_icmp_pkt(uint8_t *msg, uint8_t *dst_mac,
+int ht_encode_icmp_pkt(uint8_t *msg, uint8_t *dst_mac,
   uint32_t sip, uint32_t dip, uint16_t id, uint16_t seqnb) {
 
   // 1 ether
@@ -60,7 +60,7 @@ static int ht_encode_icmp_pkt(uint8_t *msg, uint8_t *dst_mac,
   return 0;
 }
 
-static struct rte_mbuf *ht_send_icmp(struct rte_mempool *mbuf_pool, uint8_t *dst_mac,
+struct rte_mbuf *ht_send_icmp(struct rte_mempool *mbuf_pool, uint8_t *dst_mac,
   uint32_t sip, uint32_t dip, uint16_t id, uint16_t seqnb) {
 
   const unsigned total_length = sizeof(struct rte_ether_hdr) + sizeof(struct rte_ipv4_hdr) + sizeof(struct rte_icmp_hdr);

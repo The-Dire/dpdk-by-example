@@ -1,8 +1,7 @@
 #ifndef __HT_ARP_H__
 #define __HT_ARP_H__
 
-#include <rte_ether.h>
-
+#include "common.h"
 #include "list.h"
 
 #define ARP_ENTRY_STATUS_DYNAMIC    0
@@ -23,16 +22,9 @@ typedef struct arp_entry_t {
   struct list_head entry; // 前驱 next, 后继是 prev.都在此结构中
 }arp_entry;
 
-// 查表操作,获取发送arp replay的对端的mac地址
-uint8_t* ht_get_dst_macaddr(uint32_t dip) {
-  struct list_head *cursor;
-  list_for_each(cursor, &arp_table) {
-    arp_entry *tmp = list_entry(cursor, arp_entry, entry);
-    if (dip == tmp->ip) { // dip在表中被查到则找到了
-      return tmp->hw_addr;
-    }
-  }
-  return NULL;
-}
+
+
+int ht_arp_in(struct rte_mbuf *arp_mbuf);
+
 
 #endif
