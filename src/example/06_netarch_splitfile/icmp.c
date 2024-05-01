@@ -79,4 +79,23 @@ struct rte_mbuf *ht_send_icmp(struct rte_mempool *mbuf_pool, uint8_t *dst_mac,
 
   return mbuf;
 }
+
+void ht_icmp_out(struct rte_ipv4_hdr *iphdr, struct rte_mempool *icmp_pool)
+{
+  struct rte_icmp_hdr *icmphdr = (struct rte_icmp_hdr *)(iphdr + 1);
+  char ip_buf[16] = {0};
+  printf("icmp ---> src: %s ", inet_ntoa2(iphdr->src_addr, ip_buf));
+  // 接收到的是icmp request,回一个icmp reply
+  if (icmphdr->icmp_type == RTE_IP_ICMP_ECHO_REQUEST) {
+
+    printf(" local: %s , type : %d\n", inet_ntoa2(iphdr->dst_addr, ip_buf), icmphdr->icmp_type);
+    
+    struct rte_mbuf *txbuf = ht_send_icmp(icmp_pool, ehdr->s_addr.addr_bytes,
+      iphdr->dst_addr, iphdr->src_addr, icmphdr->icmp_ident, icmphdr->icmp_seq_nb);
+
+    rte_ring_mp_enqueue_burst(g_ring->send_ring, (void**)&txbuf, 1, NULL);
+
+    rte_pktmbuf_free(mbufs[i]);
+  }
+}
 /* end of icmp */

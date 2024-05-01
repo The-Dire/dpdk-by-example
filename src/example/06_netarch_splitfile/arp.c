@@ -22,7 +22,8 @@ int ht_encode_arp_pkt(uint8_t *msg, uint16_t opcode, uint8_t *dst_mac, uint32_t 
   if (!strncmp((const char *)dst_mac, (const char *)g_default_arp_mac, RTE_ETHER_ADDR_LEN)) {
     uint8_t mac[RTE_ETHER_ADDR_LEN] = {0x0};
     rte_memcpy(eth->d_addr.addr_bytes, mac, RTE_ETHER_ADDR_LEN);
-  } else {
+  }
+  else {
     rte_memcpy(eth->d_addr.addr_bytes, dst_mac, RTE_ETHER_ADDR_LEN);
   }
   eth->ether_type = rte_htons(RTE_ETHER_TYPE_ARP);
@@ -62,7 +63,43 @@ struct rte_mbuf *ht_send_arp(struct rte_mempool *mbuf_pool, uint16_t opcode, uin
   return mbuf;
 }
 
-int ht_arp_in(struct rte_mbuf *arp_mbuf) {
+void ht_arp_out_callback(__attribute__((unused)) struct rte_timer *tim,
+  void *arg) {
+  // 发送arp request所需的mbuf
+  struct rte_mempool *mbuf_pool = (struct rte_mempool *)arg;
+  // 不直接发送,送入待发送队列中等待其他核心进行发送处理
+  // (这里为了简单还是在main中发送的,而收包则是存入recv_ring里
+  // 由另外一个绑核线程进行协议解析)
+  struct rte_ring *send_ring = g_ring->send_ring;
+  
+  // 定时发送
+  int i = 0;
+  for (i = 1; i <= 254; i++) { // 局域网每一台机器都发送一个arp request
+    uint32_t dst_ip = (g_local_ip & 0x00FFFFFF) | (0xFF000000 & (i << 24));
+
+    char ip_buf[16] = {0};
+    printf("arp ---> src: %s ----- %d\n", inet_ntoa2(dst_ip, ip_buf), i);
+
+    struct rte_mbuf* arp_buf = NULL;
+    uint8_t *dst_mac = ht_get_dst_macaddr(dst_ip);
+    // 如果arp table里面没有对应dst ip地址,那么arp hdr和ether hdr中的dmac字段自己构造发送.
+    if (dst_mac == NULL) {
+			// arp hdr --> mac : FF:FF:FF:FF:FF:FF
+			// ether hdr --> mac : 00:00:00:00:00:00
+			arp_buf = ht_send_arp(mbuf_pool, RTE_ARP_OP_REQUEST, g_default_arp_mac, g_local_ip, dst_ip); 
+    }
+    else { // 常规的arp request发送
+      arp_buf = ht_send_arp(mbuf_pool, RTE_ARP_OP_REQUEST, dst_mac, g_local_ip, dst_ip);
+    }
+
+    //rte_eth_tx_burst(g_dpdk_port_id, 0, &arp_buf, 1);
+    //rte_pktmbuf_free(arp_buf);
+    // 待发送的arp包存入队列中
+    rte_ring_mp_enqueue_burst(send_ring, (void**)&arp_buf, 1, NULL);
+  }
+}
+
+int ht_arp_in(struct rte_mbuf *arp_mbuf, struct rte_mempool *mbuf_pool) {
   // 获取arp头
   struct rte_arp_hdr *arp_hdr = rte_pktmbuf_mtod_offset(arp_mbuf, 
       struct rte_arp_hdr *, sizeof(struct rte_ether_hdr));
@@ -82,7 +119,8 @@ int ht_arp_in(struct rte_mbuf *arp_mbuf) {
       // 带有rte_eth_tx_burst改成全改成入队即可.放入到send ring中处理
       rte_ring_mp_enqueue_burst(g_ring->send_ring, (void**)&arp_buf, 1, NULL);
       // 处理arp响应的流程(这里对端发送arp reply,这个值要记录到arp表里)
-    } else if (arp_hdr->arp_opcode == rte_htons(RTE_ARP_OP_REPLY)) {
+    }
+    else if (arp_hdr->arp_opcode == rte_htons(RTE_ARP_OP_REPLY)) {
       printf("arp --> reply\n");
       
       uint8_t *hw_addr = ht_get_dst_macaddr(arp_hdr->arp_data.arp_sip);
@@ -111,7 +149,10 @@ int ht_arp_in(struct rte_mbuf *arp_mbuf) {
 
     }
     rte_pktmbuf_free(mbufs[i]);
+    return 1;
   }
-  continue;
+  else {
+    return 0;
+  }
 }
 /* end of arp */

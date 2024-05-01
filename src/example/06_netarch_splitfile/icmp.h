@@ -5,10 +5,6 @@
 
 uint16_t ht_checksum(void *addr, int count);
 
-int ht_encode_icmp_pkt(uint8_t *msg, uint8_t *dst_mac,
-  uint32_t sip, uint32_t dip, uint16_t id, uint16_t seqnb);
-
-struct rte_mbuf *ht_send_icmp(struct rte_mempool *mbuf_pool, uint8_t *dst_mac,
-  uint32_t sip, uint32_t dip, uint16_t id, uint16_t seqnb);
+void ht_icmp_out(struct rte_ipv4_hdr *iphdr, struct rte_mempool *icmp_pool);
 
 #endif

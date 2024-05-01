@@ -66,43 +66,6 @@ void print_ethaddr(const char *name, const struct rte_ether_addr *eth_addr)
 	printf("%s%s", name, buf);
 }
 
-/* begin of free arp request send */
-void arp_request_timer_callback(__attribute__((unused)) struct rte_timer *tim,
-  void *arg) {
-  // 发送arp request所需的mbuf
-  struct rte_mempool *mbuf_pool = (struct rte_mempool *)arg;
-  // 不直接发送,送入待发送队列中等待其他核心进行发送处理
-  // (这里为了简单还是在main中发送的,而收包则是存入recv_ring里
-  // 由另外一个绑核线程进行协议解析)
-  struct rte_ring *send_ring = g_ring->send_ring;
-  
-  // 定时发送
-  int i = 0;
-  for (i = 1; i <= 254; i++) { // 局域网每一台机器都发送一个arp request
-    uint32_t dst_ip = (g_local_ip & 0x00FFFFFF) | (0xFF000000 & (i << 24));
-
-    char ip_buf[16] = {0};
-    printf("arp ---> src: %s ----- %d\n", inet_ntoa2(dst_ip, ip_buf), i);
-
-    struct rte_mbuf* arp_buf = NULL;
-    uint8_t *dst_mac = ht_get_dst_macaddr(dst_ip);
-    // 如果arp table里面没有对应dst ip地址,那么arp hdr和ether hdr中的dmac字段自己构造发送.
-    if (dst_mac == NULL) {
-			// arp hdr --> mac : FF:FF:FF:FF:FF:FF
-			// ether hdr --> mac : 00:00:00:00:00:00
-			arp_buf = ht_send_arp(mbuf_pool, RTE_ARP_OP_REQUEST, g_default_arp_mac, g_local_ip, dst_ip); 
-    } else { // 常规的arp request发送
-      arp_buf = ht_send_arp(mbuf_pool, RTE_ARP_OP_REQUEST, dst_mac, g_local_ip, dst_ip);
-    }
-
-    //rte_eth_tx_burst(g_dpdk_port_id, 0, &arp_buf, 1);
-    //rte_pktmbuf_free(arp_buf);
-    // 待发送的arp包存入队列中
-    rte_ring_mp_enqueue_burst(send_ring, (void**)&arp_buf, 1, NULL);
-  }
-}
-/* end of free arp */
-
 // 收包main函数
 int ht_pkt_process(void *arg) {
 
@@ -123,115 +86,17 @@ int ht_pkt_process(void *arg) {
       
       // 对端发送的是arp协议,对arp进行解析
       if (ehdr->ether_type == rte_htons(RTE_ETHER_TYPE_ARP)) {
-        // 获取arp头
-        struct rte_arp_hdr *arp_hdr = rte_pktmbuf_mtod_offset(mbufs[i], 
-            struct rte_arp_hdr *, sizeof(struct rte_ether_hdr));
-        
-        char ip_buf[16] = {0};
-        printf("arp ---> src: %s ", inet_ntoa2(arp_hdr->arp_data.arp_tip, ip_buf));
-        printf(" local: %s \n", inet_ntoa2(g_local_ip, ip_buf));
-        // 由于arp request是广播,判断目标地址相同才返回arp response
-        if (arp_hdr->arp_data.arp_tip == g_local_ip) {
-          if (arp_hdr->arp_opcode == rte_htons(RTE_ARP_OP_REQUEST)) {
-            printf("arp --> request\n");
-            // 接收到arp request包后返回arp response。注:request里的源ip是response里的目的ip
-            struct rte_mbuf *arp_buf = ht_send_arp(mbuf_pool, RTE_ARP_OP_REPLY, arp_hdr->arp_data.arp_sha.addr_bytes, 
-              arp_hdr->arp_data.arp_tip, arp_hdr->arp_data.arp_sip);
-            //rte_eth_tx_burst(g_dpdk_port_id, 0, &arpbuf, 1);
-            //rte_pktmbuf_free(arp_buf);
-            // 带有rte_eth_tx_burst改成全改成入队即可.放入到send ring中处理
-            rte_ring_mp_enqueue_burst(send_ring, (void**)&arp_buf, 1, NULL);
-            // 处理arp响应的流程(这里对端发送arp reply,这个值要记录到arp表里)
-          } else if (arp_hdr->arp_opcode == rte_htons(RTE_ARP_OP_REPLY)) {
-            printf("arp --> reply\n");
-            
-            uint8_t *hw_addr = ht_get_dst_macaddr(arp_hdr->arp_data.arp_sip);
-            // 如果接收到了arp reply,但是查表找不到对应的mac地址则插入表中
-            if (hw_addr == NULL) {
-              // 结点初始化
-              arp_entry *new_entry = rte_malloc("arp_entry", sizeof(arp_entry), 0);
-
-              new_entry->ip = arp_hdr->arp_data.arp_sip;
-              rte_memcpy(new_entry->hw_addr, arp_hdr->arp_data.arp_sha.addr_bytes, RTE_ETHER_ADDR_LEN);
-              new_entry->type = 0;
-              // 线程不安全，这里应该改为cas原子操作
-              list_add_tail(&new_entry->entry, &arp_table);
-              arp_count++;
-            }
-
-            struct list_head *iter;
-            list_for_each(iter, &arp_table) {
-              arp_entry *addr = list_entry(iter, arp_entry, entry);
-              char ip_buf[16] = {0};
-
-              print_ethaddr("arp table --> mac: ", (struct rte_ether_addr *)addr->hw_addr);
-
-              printf(" ip : %s \n", inet_ntoa2(addr->ip, ip_buf));
-            }
-
+          if (!ht_arp_in(mbufs[i], mbuf_pool)) {
+            continue;
           }
-          rte_pktmbuf_free(mbufs[i]);
-        }
-        continue;
       }
       
       if (ehdr->ether_type != rte_htons(RTE_ETHER_TYPE_IPV4)) { // 判断是否是ip协议
         continue; // 不是ip协议不做处理
       }
-      // 解析ip协议头部
-      struct rte_ipv4_hdr *iphdr =  rte_pktmbuf_mtod_offset(mbufs[i], struct rte_ipv4_hdr *, 
-        sizeof(struct rte_ether_hdr));
-      // 对是udp的包做处理
-      if (iphdr->next_proto_id == IPPROTO_UDP) {
-        // udp的头
-        struct rte_udp_hdr *udphdr = (struct rte_udp_hdr *)(iphdr + 1);
 
-        // 发送包所需要的六元组dmac,sip,dip,sport,dport获取并填充
-        // 由于是发echo reply所以需要交换。比如dmac是取获取到的包的smac
-        rte_memcpy(g_dst_mac, ehdr->s_addr.addr_bytes, RTE_ETHER_ADDR_LEN);
-        
-        rte_memcpy(&g_src_ip, &iphdr->dst_addr, sizeof(uint32_t));
-        rte_memcpy(&g_dst_ip, &iphdr->src_addr, sizeof(uint32_t));
 
-        rte_memcpy(&g_src_port, &udphdr->dst_port, sizeof(uint16_t));
-        rte_memcpy(&g_dst_port, &udphdr->src_port, sizeof(uint16_t));
 
-        uint16_t length = rte_ntohs(udphdr->dgram_len); // 两个字节以上都要转换ntohs
-        *((char*)udphdr + length) = '\0';	// 最后一段置为0
-        // 打印接收到的udp数据
-        char ip_buf[16] = {0};
-        printf("src: %s:%d, ", inet_ntoa2(iphdr->src_addr, ip_buf), udphdr->src_port);
-
-        printf("dst: %s:%d, %s\n", inet_ntoa2(iphdr->src_addr, ip_buf), udphdr->src_port, (char *)(udphdr+1));
-
-        // 发送udp echo
-        struct rte_mbuf *txbuf = ht_send_udp(mbuf_pool, (uint8_t *)(udphdr+1), length);
-        // rte_eth_tx_burst(g_dpdk_port_id, 0, &txbuf, 1);// rte_eth_rx_burst发送数据
-        // rte_pktmbuf_free(txbuf); // 发送用的mbuf同样放回到内存池中
-        // 发送udp echo通过送入队列中，在main中从队列取出再发送
-        rte_ring_mp_enqueue_burst(send_ring, (void**)&txbuf, 1, NULL);
-
-        rte_pktmbuf_free(mbufs[i]); // 放回内存池
-      }
-
-      // icmp包的处理
-      if (iphdr->next_proto_id == IPPROTO_ICMP) {
-        struct rte_icmp_hdr *icmphdr = (struct rte_icmp_hdr *)(iphdr + 1);
-        char ip_buf[16] = {0};
-        printf("icmp ---> src: %s ", inet_ntoa2(iphdr->src_addr, ip_buf));
-        // 接收到的是icmp request,回一个icmp reply
-        if (icmphdr->icmp_type == RTE_IP_ICMP_ECHO_REQUEST) {
-
-          printf(" local: %s , type : %d\n", inet_ntoa2(iphdr->dst_addr, ip_buf), icmphdr->icmp_type);
-          
-          struct rte_mbuf *txbuf = ht_send_icmp(mbuf_pool, ehdr->s_addr.addr_bytes,
-            iphdr->dst_addr, iphdr->src_addr, icmphdr->icmp_ident, icmphdr->icmp_seq_nb);
-
-          rte_ring_mp_enqueue_burst(send_ring, (void**)&txbuf, 1, NULL);
-
-          rte_pktmbuf_free(mbufs[i]);
-        }
-      }
     }
   }
   return 0;
@@ -262,7 +127,7 @@ int main(int argc, char *argv[]) {
   uint64_t hz = rte_get_timer_hz();
   unsigned lcore_id = rte_lcore_id();
   // PERIODICAL代表多次触发,SINGLE则定时器单次触发
-  rte_timer_reset(&arp_timer, hz, PERIODICAL, lcore_id, arp_request_timer_callback, mbuf_pool);
+  rte_timer_reset(&arp_timer, hz, PERIODICAL, lcore_id, ht_arp_out_callback, mbuf_pool);
   /*end of timer init */
 
   // 创建ring buffer并初始化

@@ -22,9 +22,11 @@ typedef struct arp_entry_t {
   struct list_head entry; // 前驱 next, 后继是 prev.都在此结构中
 }arp_entry;
 
+/* 主动发送arp请求函数回调,在dpdk定时器中调用*/
+void ht_arp_out_callback(__attribute__((unused)) struct rte_timer *tim,
+  void *arg)
 
-
-int ht_arp_in(struct rte_mbuf *arp_mbuf);
+int ht_arp_in(struct rte_mbuf *arp_mbuf, struct rte_mempool *arp_pool);
 
 
 #endif
