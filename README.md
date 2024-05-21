@@ -41,6 +41,8 @@ dpdk实战例子学习指南
 
 ## 杂项
 
+[1.定制dpdk驱动(以修改设备mvpp2和pcie总线加载顺序为例)](doc/work_note/01_dpdk_modify_bus_load.md)
+
 ### dpvs源码分析
 
 ### 虚拟化相关知识
