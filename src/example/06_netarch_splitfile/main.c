@@ -87,6 +87,7 @@ int ht_pkt_process(void *arg) {
       // 对端发送的是arp协议,对arp进行解析
       if (ehdr->ether_type == rte_htons(RTE_ETHER_TYPE_ARP)) {
           if (!ht_arp_in(mbufs[i], mbuf_pool)) {
+            // 处理失败跳到下一个包
             continue;
           }
       }
@@ -94,8 +95,18 @@ int ht_pkt_process(void *arg) {
       if (ehdr->ether_type != rte_htons(RTE_ETHER_TYPE_IPV4)) { // 判断是否是ip协议
         continue; // 不是ip协议不做处理
       }
+      // 解析ip协议头部
+      struct rte_ipv4_hdr *iphdr =  rte_pktmbuf_mtod_offset(mbufs[i], struct rte_ipv4_hdr *, 
+        sizeof(struct rte_ether_hdr));
+      if (iphdr->next_proto_id == IPPROTO_UDP) {
+        // 进入udp socket处理流程
 
+      }
 
+      if (iphdr->next_proto_id == IPPROTO_ICMP) {
+        // icmp reply流程
+        ht_icmp_out(iphdr, mbuf_pool);
+      }
 
     }
   }
