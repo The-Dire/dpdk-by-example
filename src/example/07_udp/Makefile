@@ -2,10 +2,10 @@
 # Copyright(c) 2010-2014 Intel Corporation
 
 # binary name
-APP = dpdk_udp
+APP = dpdk_netarch
 
 # all source are stored in SRCS-y
-SRCS-y := netarch_udp.c udp.c sock.c ht_utils.c arp.c
+SRCS-y := netarch.c
 
 # Build using pkg-config variables if possible
 ifeq ($(shell pkg-config --exists libdpdk && echo 0),0)
