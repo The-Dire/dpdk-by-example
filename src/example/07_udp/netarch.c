@@ -399,7 +399,7 @@ static int udp_process(struct rte_mbuf *udpmbuf) {
 
   // 调试用
   char ip[16] = {0};
-  printf("udp_process ---> src: %s:%d \n", inet_ntoa2(iphdr->src_addr, ), rte_ntohs(udphdr->src_port));
+  printf("udp_process ---> src: %s:%d \n", inet_ntoa2(iphdr->src_addr, ip), rte_ntohs(udphdr->src_port));
   // 根据ip和port获取udp_sock_fd结构体
   struct udp_sock_fd *host = get_hostinfo_fromip_port(iphdr->dst_addr, udphdr->dst_port, iphdr->next_proto_id);
   if (host == NULL) {
