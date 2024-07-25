@@ -6,16 +6,18 @@ dpdk实战例子学习指南
 
 [1.dpdk环境虚拟机安装](doc/first/01_dpdk_env.md)
 
-[2.dpdk实现网卡接收数据包并解析udp包](doc/first/02_dpdk_udp_recv.md)
+[2.dpdk实现网卡接收数据包并解析udp包](doc/first/02_dpdk_udp_recv.md) --- 代码在src/example/01_recv
 
-[3.dpdk实现udp echo服务器](doc/first/03_dpdk_echo_server.md)
+[3.dpdk实现udp echo服务器](doc/first/03_dpdk_echo_server.md)  --- 代码在src/example/02_udp_echo_server
 
 
-[4.dpdk实现arp响应和icmp的reply](doc/first/04_arp_request_response.md)
+[4.dpdk实现arp响应和icmp的reply](doc/first/04_arp_request_response.md)  --- 代码在src/example/03_arp和04_icmp
 
-[5.实现arp广播以及arp表相关功能](doc/first/05_arp_table.md)
+[5.实现arp广播以及arp表相关功能](doc/first/05_arp_table.md) --- 代码在src/example/05_arptable
 
-[6.利用DPDK队列实现基础协议栈(什么是协议栈)](doc/first/06_dpdk_netstack.md)
+[6.利用DPDK队列实现基础协议栈(什么是协议栈)](doc/first/06_dpdk_netstack.md) --- 代码在src/example/06_netarch
+
+[7.实现socket层并使用socekt实现udp服务器](doc/first/07_dpdk_impl_udp_sock.md) --- 代码在src/example/07_udp
 
 [补充:arp基础知识](doc/first/arp_basic.md)
 
