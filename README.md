@@ -19,6 +19,8 @@ dpdk实战例子学习指南
 
 [7.实现socket层并使用socekt实现udp服务器](doc/first/07_dpdk_impl_udp_sock.md) --- 代码在src/example/07_udp
 
+[8.协议栈完结篇:实现tcp socket](doc/first/08_tcp_impl.md) -- 代码在src/example/08_tcp
+
 [补充:arp基础知识](doc/first/arp_basic.md)
 
 [10G网卡的最大包转发率是怎么算出来的(包转发率)](doc/first/pps_compute.md)
