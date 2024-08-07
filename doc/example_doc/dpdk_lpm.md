@@ -58,9 +58,9 @@
 
 随着网络的发展和规模的扩大，原始的LPM算法面临着一系列的挑战，包括查找速度、内存占用和更新效率等问题。
 
+## DPDK LPM中的算法
+
 经过统计分析，查找的IP掩码长度绝大多数是小于等于24位的，因此DPDK中的LPM实现综合考虑了时间和空间问题，做了一个比较好的折中，将32位的地址空间分为两部分：高24位，低8位。
-
-
 
 绝大部分可以通过一次内存访问便可以找到对应的路由；当查找的IP掩码长度超过24时，需要两次访问内存，而这种情况相对较少。
 
@@ -69,6 +69,17 @@
 ![](resource/rte_lpm_algo.png)
 
 DPDK的LPM算法实现就和图中一致。
+
+采用两级hash表，且将32bit的IP地址分为两个部分:
+
+1. tbl24(24bit): 1张2^24规格的hash表
+2. tbl8(8bit): 一张2^8规格的hash表
+
+具体查找上文提过了，小于24bit时查tbl24表查一次。大于查两次表。
+
+具体行为如下图所示:
+
+![](resource/lpm_insert.png)
 
 ## DPDK LPM浅析
 
@@ -139,11 +150,11 @@ rte_lpm_lookup(struct rte_lpm *lpm, uint32_t ip, uint32_t *next_hop)
 
 ![](resource/lpm_structure.png)
 
-这里以dpdk19.08， rte_lpm的ipv4为例，重要结构为`rules_tbl`、`rule_info`。
+这里以dpdk19.08， rte_lpm的ipv4为例，重要结构为`rules_tbl`、`rule_info`,`rte_lpm_tbl8_entry`和`rte_lpm_tbl24_entry`。
 
-其中`rule_info`作为元数据用来查重以及添加索引(加速删除和添加)。
+其中`rule_info`是`rules_tbl`的快速访问索引。
 
-`rules_tbl`保存的是实际路由规则。
+`rules_tbl`保存的是实际路由规则。(路由信息,该规则用来确定出接口,当删除的时候该结构可以使得LPM表快速收敛)
 
 下面是一些细节，dpdk怎么计算规则所需内存大小的如下:
 
@@ -164,6 +175,22 @@ struct rte_lpm_tbl_entry {
     uint32_t valid_group :1;  // 当为 tbl24 节点的时候 valid_group 为 1 表明 next_hop 为 tbl8 的开始索引，为 ０ 则表示真实的下一跳。
     uint32_t depth       :6;
 };
+```
+
+这个结构可以理解为模板，实际上tbl24和tbl8如下:
+
+```c
+struct rte_lpm_tbl24_entry {
+    // 该字段为下一跳或tbl8的索引
+    union {
+        uint8_t next_hop;
+        uint8_t tbl8_gindex;
+    }
+    ....
+    // 其余字段和rte_lpm_tbl_entry一致
+}
+
+// tbl8结构和rte_lpm_tbl_entry完全一致
 ```
 
 ### LPM创建
@@ -194,5 +221,21 @@ rte_lpm_create(const char *name, int socket_id,
 
 ![](resource/rte_lpm_create.png)
 
+这里说明下，为了提高访问速度，是顺序存储的所有表项。
+
 ### LPM添加
+
+根据一个实际例子说明LPM的插入。
+
+这些是创建时候的结构体，右边是tbl24和tbl8的结构体，为0的没打印，所以是空。rules_tbls的长度根据传入的配置参数确定。
+
+
+![](resource/lpm_add1.png)
+
+这里以添加192.168.3.0/24的为例，nexthop可以为ip也可以为指定标识，这里以123代替。
+
+`rule_info`中的`first_rule`是该depth对应`rules_tbl`中的索引，`used_rules`是使用的数量。
+
+第一个表中rule_info depth为24。
+
 
