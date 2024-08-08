@@ -27,26 +27,32 @@ dpdk实战例子学习指南
 
 [dpdk常用核心api使用教程](doc/first/dpdk_api.md)
 
-### 2.dpdk实现简单的协议栈
-
-### 3.dpdk官方案例源码分析
-
-
-### 4.dpdk源码分析以及其最佳实践
+### 2.dpdk涉及到的基础知识
 
 [1.numa知识扫盲](doc/source_doc/00_numa_basic.md)
 
-[2.dpdk多线程浅析及其Hello World程序详解](doc/source_doc/01_dpdk_multi_threads.md)
+[2.dpdk怎么确定网卡rx与tx描述符](doc/source_doc/02_dpdk_tx_rx_config.md)
 
-[3.dpdk怎么确定网卡rx与tx描述符](doc/source_doc/02_dpdk_tx_rx_config.md)
+[3.虚拟化知识扫盲](doc/basic/00_virtual_basic.md)
+
+[4.dpdk内存均分优化实现分析](doc/source_doc/03_dpdk_mem_manager_optimize.md)
+
+### 3.dpdk官方案例源码分析
+
+[1.dpdk多线程浅析及其Hello World程序详解](doc/source_doc/01_dpdk_multi_threads.md)
+
+[2.dpdk l2fwd源码分析](doc/example_doc/l2fwd.md)
+
+[3.dpdk lpm算法分析](doc/example_doc/dpdk_lpm.md)
+
+有部分源码没写文档，因为比较重复只添加了注释可以自行查看。[dpdk example](example-code)
+
+### 4.dpdk源码分析以及其最佳实践
 
 
-### 5.dpdk多语言:nff-go框架从使用到源码分析
 
 ## 杂项
 
 [1.定制dpdk驱动(以修改设备mvpp2和pcie总线加载顺序为例)](doc/work_note/01_dpdk_modify_bus_load.md)
 
 ### dpvs源码分析
-
-### 虚拟化相关知识
