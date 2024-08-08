@@ -60,8 +60,8 @@ enum valid_flag {
 
 /** LPM configuration structure. */
 struct rte_lpm_config {
-	uint32_t max_rules;      /**< Max number of rules. */
-	uint32_t number_tbl8s;   /**< Number of tbl8s to allocate. */
+	uint32_t max_rules;      /**< Max number of rules. */ // 最大规则数
+	uint32_t number_tbl8s;   /**< Number of tbl8s to allocate. */ // tbl8的数量
 	int flags;               /**< This field is currently unused. */
 };
 
@@ -118,16 +118,16 @@ struct __rte_lpm {
 	struct rte_lpm_rule_info rule_info[RTE_LPM_MAX_DEPTH];
 	struct rte_lpm_rule *rules_tbl; /**< LPM rules. */
 };
-
+// 创建lpm表
 struct rte_lpm *rte_lpm_create(const char *name, const struct rte_lpm_config *config);
-
+// 添加ip/掩码到lpm表中并标明其下一跳
 int rte_lpm_add(struct rte_lpm *lpm, uint32_t ip, uint8_t depth,
 		uint32_t next_hop);
-
- int rte_lpm_lookup(struct rte_lpm *lpm, uint32_t ip, uint32_t *next_hop);
- 
+// 根据ip查找lpm表
+int rte_lpm_lookup(struct rte_lpm *lpm, uint32_t ip, uint32_t *next_hop);
+// 从lpm表中删除对应的表项
 int rte_lpm_delete(struct rte_lpm *lpm, uint32_t ip, uint8_t depth);
-
+// 输出lpm表的各项值
 void rte_lpm_dump(struct rte_lpm *lpm);
 
 #endif
