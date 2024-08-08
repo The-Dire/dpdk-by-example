@@ -655,6 +655,141 @@ l2fwd_main_loop(void)
 
 接着判断当前lcore绑定的收包端口数目，为0表示不收包，一般来说这是master线程。
 
+`for (i = 0; i < qconf->n_rx_port; i++)`循环打印当前 lcore 绑定的每个端口号的 port_id。
+
+完成了这些操作后，进入到 while 循环中，注意循环终止条件为 force_quit 为 true，当 l2fwd 收到 SIGINT、SIGTERM 信号时就会将 force_quit 设置为 true，收发包线程检测到后就会退出循环。
+
+```c
+	// 收发包循环
+	while (!force_quit) {
+
+		cur_tsc = rte_rdtsc();
+
+		/* 发送数据包流程
+		 * TX burst queue drain
+		 */
+		diff_tsc = cur_tsc - prev_tsc;
+		if (unlikely(diff_tsc > drain_tsc)) {
+
+			for (i = 0; i < qconf->n_rx_port; i++) {
+
+				portid = l2fwd_dst_ports[qconf->rx_port_list[i]];
+				buffer = tx_buffer[portid];
+				// 立刻发出buffer中的报文
+				sent = rte_eth_tx_buffer_flush(portid, 0, buffer);
+				if (sent)
+					port_statistics[portid].tx += sent; // 增加tx统计
+
+			}
+
+			/* if timer is enabled */
+			if (timer_period > 0) {
+
+				/* advance the timer */
+				timer_tsc += diff_tsc;
+
+				/* if timer has reached its timeout */
+				if (unlikely(timer_tsc >= timer_period)) {
+
+					/* do this only on master core */
+					if (lcore_id == rte_get_master_lcore()) {
+						print_stats();
+						/* reset the timer */
+						timer_tsc = 0;
+					}
+				}
+			}
+
+			prev_tsc = cur_tsc;
+		}
+
+		/*
+		 * Read packet from RX queues
+		 */
+		for (i = 0; i < qconf->n_rx_port; i++) {
+
+			portid = qconf->rx_port_list[i];
+			nb_rx = rte_eth_rx_burst(portid, 0,
+						 pkts_burst, MAX_PKT_BURST);
+			// 增加rx统计
+			port_statistics[portid].rx += nb_rx;
+
+			for (j = 0; j < nb_rx; j++) {
+				m = pkts_burst[j];
+				rte_prefetch0(rte_pktmbuf_mtod(m, void *));
+				l2fwd_simple_forward(m, portid); // 收到的报文调用l2fwd_simple_forward
+			}
+		}
+	}
+```
+
+收发包线程第一次执行时会先执行 `for (i = 0; i < qconf->n_rx_port; i++)` 这个循环，此循环依次在当前 lcore 绑定的端口上收包，收到包后先增加 port_statistics 中的 rx 统计，然后对收到的每个报文调用 l2fwd_simple_forward。
+
+```c
+static void
+l2fwd_simple_forward(struct rte_mbuf *m, unsigned portid)
+{
+	unsigned dst_port;
+	int sent;
+	struct rte_eth_dev_tx_buffer *buffer;
+	// 获取当前接口的转发接口(与之配对的接口)
+	dst_port = l2fwd_dst_ports[portid];
+	// 将转发接口的mac地址填充到报文的源mac地址处
+	if (mac_updating) // 如果开启了mac updating
+		l2fwd_mac_updating(m, dst_port); // 调整mac地址
+	// 填充完成的报文通过rte_eth_tx_buffer送到当前lcore的tx_buffer中
+	buffer = tx_buffer[dst_port];
+	// 将收到的包缓存在 tx_buffer里,用于未来的发送
+	sent = rte_eth_tx_buffer(dst_port, 0, buffer, m);
+	// 返回值 如果为0,表示 pkt 已经被缓存
+	// 返回值 N>0,表示由于缓冲区被flush导致N个pkt被发送
+	if (sent)
+		port_statistics[dst_port].tx += sent;
+}
+```
+
+`l2fwd_simple_forward` 函数中首先获取当前接口的转发接口，然后将转发接口的 mac 地址填充到报文的源 mac 地址处。
+
+填充完成的报文通过调用 `rte_eth_tx_buffer` 投递到当前 lcore 的 tx_buffer 中，当 tx_buffer 中的报文数目小于阈值（32）的时候报文不会立刻发送出去。
+
+为此 l2fwd 设定了一个 drain 延时，它的时间是 100 us，由于 l2fwd 使用 tsc 来计时，
+
+```c
+	const uint64_t drain_tsc = (rte_get_tsc_hz() + US_PER_S - 1) / US_PER_S *
+			BURST_TX_DRAIN_US;
+```
+
+上面代码将 100us 转化为了 tsc 周期数目。
+
+然后回到while循环，先执行`cur_tsc = rte_rdtsc();`记录当前的 tsc 时间，然后减去上一次记录的时间就得到了延时，当延时大于 100us 的时候，遍历当前 lcore 上绑定的每一个端口，调用`rte_eth_tx_buffer_flush` 来立刻发出 buffer 中的报文，然后增加发包统计。
+
+```c
+			/* if timer is enabled */
+			if (timer_period > 0) {
+
+				/* advance the timer */
+				timer_tsc += diff_tsc;
+
+				/* if timer has reached its timeout */
+				if (unlikely(timer_tsc >= timer_period)) {
+
+					/* do this only on master core */
+					if (lcore_id == rte_get_master_lcore()) {
+						print_stats();
+						/* reset the timer */
+						timer_tsc = 0;
+					}
+				}
+			}
+
+            prev_tsc = cur_tsc;
+
+```
+
+然后就到时钟周期计算代码了，首先判断 `timer_period` 是否使能，当使能时，调整定时器的值（timer_tsc 的值），当 timer_tsc 的值大于等于 timer_period 表示一个周期到达，`if (lcore_id == rte_get_master_lcore())`判断当前线程是否是管理线程，是管理线程则调用 `print_stats` 输出统计，然后清空 `timer_tsc` 重新计数。
+
+
+最后`prev_tsc = cur_tsc;`更新上一次的 tsc 时间，这就完成了整个过程！
 
 
 ## 使用l2fwd
@@ -735,6 +870,8 @@ Closing port 1... Done
 Bye...
 ```
 
+# 总结
+
 二层转发和普通的端口转发(basicfwd)区别如下:
 
 | feature   |              l2fwd              |                basicfwd                 |
@@ -743,5 +880,3 @@ Bye...
 | lcore数量 |   多个,每个lcore负责一个port    |           一个,执行类似中继器           |
 | 转发逻辑  |       转发时会改写mac地址       | 只能说0<->1,2<->3这样成对的port互相转发 |
 | tx_buffer | 有发包缓存,收到的包会缓存到发包 |                 单元格                  |
-
-
