@@ -10,15 +10,15 @@
 
 下面就是一个典型的网络拓扑图:
 
-![](resource/route_ex1.png)
+![](lpm_resource/route_ex1.png)
 
 该拓扑中RouterA的路由表如下:
 
-![](resource/route_ex2.png)
+![](lpm_resource/route_ex2.png)
 
 接着看下图
 
-![](resource/route_ex3.png)
+![](lpm_resource/route_ex3.png)
 
 如果PC1想要访问PC2或PC3，对于路由器A来说只需要把包送到NextHop(下一跳)192.168.4.2即可，对于路由器而言就是把包送到出接口Ethernet 0/0/0。
 
@@ -42,17 +42,17 @@
 
 如图所示就是CIDR格式划分的网络ip。CIDR的本质是在路由表中加入子网掩码，并根据该列信息对网络进行分割，而不是根据默认的A，B，C进行分割。
 
-![](resource/CIDR.png)
+![](lpm_resource/CIDR.png)
 
 下面看一个实际例子:
 
-![](resource/CIDR_ex1.png)
+![](lpm_resource/CIDR_ex1.png)
 
 如果配置的IP为`10.100.122.2/24`来说的话，这个配置不仅表明了这台主机的IP同时隐含了该网段的信息。
 
 原始LPM的实现可以为如下:
 
-![](resource/lpm_impl.png)
+![](lpm_resource/lpm_impl.png)
 
 根据掩码位数分类为不同的hash表，有多个hash表组成。
 
@@ -66,7 +66,7 @@
 
 下面是其核心算法思想:
 
-![](resource/rte_lpm_algo.png)
+![](lpm_resource/rte_lpm_algo.png)
 
 DPDK的LPM算法实现就和图中一致。
 
@@ -79,7 +79,7 @@ DPDK的LPM算法实现就和图中一致。
 
 具体行为如下图所示:
 
-![](resource/lpm_insert.png)
+![](lpm_resource/lpm_insert.png)
 
 ## DPDK LPM浅析
 
@@ -89,7 +89,7 @@ LPM 库支持动态配置路由表，可以在运行时添加、删除或修改�
 
 ### LPM 主要接口函数
 
-![](resource/rte_lpm_api.png)
+![](lpm_resource/rte_lpm_api.png)
 
 其实核心api就三个:
 
@@ -148,7 +148,11 @@ rte_lpm_lookup(struct rte_lpm *lpm, uint32_t ip, uint32_t *next_hop)
 
 ### LPM结构
 
-![](resource/lpm_structure.png)
+一张有2^24条目的一级表叫做tbl24。
+
+多张(默认为256)2^8条目的二级表称为tbl8。
+
+![](lpm_resource/lpm_structure.png)
 
 这里以dpdk19.08， rte_lpm的ipv4为例，重要结构为`rules_tbl`、`rule_info`,`rte_lpm_tbl8_entry`和`rte_lpm_tbl24_entry`。
 
@@ -219,18 +223,25 @@ rte_lpm_create(const char *name, int socket_id,
 
 下图是dpdk创建后的大致内存布局：
 
-![](resource/rte_lpm_create.png)
+![](lpm_resource/rte_lpm_create.png)
 
 这里说明下，为了提高访问速度，是顺序存储的所有表项。
+
 
 ### LPM添加
 
 根据一个实际例子说明LPM的插入。
 
-这些是创建时候的结构体，右边是tbl24和tbl8的结构体，为0的没打印，所以是空。rules_tbls的长度根据传入的配置参数确定。
+这些是创建时候的结构体，右边是tbl24和tbl8的结构体。rules_tbls的长度根据传入的配置参数确定。
+
+1. 初始表的状态如下:
+
+![](lpm_resource/lpm_add1.png)
 
 
-![](resource/lpm_add1.png)
+2. 添加 192.168.3.0/24  nexthop=123后表如下:
+
+![](lpm_resource/lpm_add2.png)
 
 这里以添加192.168.3.0/24的为例，nexthop可以为ip也可以为指定标识，这里以123代替。
 
@@ -238,4 +249,139 @@ rte_lpm_create(const char *name, int socket_id,
 
 第一个表中rule_info depth为24。
 
+3. 添加 192.168.3.44/32 nexthop=456后表如下:
 
+![](lpm_resource/lpm_add3.png)
+
+在有24长度的基础上，插入了一个掩码长度为32的，除了`rule_info` ,`rules_tbl`中的变化，可以看到tbl24中 valid group、NextHop Depth 的值也变了
+valid group代表是该tbl24还有对应的tbl8，nextHop是指向的tbl8的块数（程序最开始申请了`number_tbl8s`个tbl8，每个固定大小为256）
+
+这里添加了后，再查找其实有问题，后面查找时候解释。
+
+
+4. 添加 192.168.0.0/16 nexthop=789
+
+![](lpm_resource/lpm_add4.png)
+
+这里直接添加了一个掩码为长度16的，可以看到`rules_tbl`这个地方是有位置改变的，不但添加了192.168.0.0/16，还被移动到了index=0的位置。
+
+右边的话，主要是看tbl24这个表，tb8和之前是没有变化的，tbl24中192.168.0-192.168.255的全部设置为nextHop 789，之前添加过的路由192.168.3.*的除外，并没有更改。
+
+要说明下添加的掩码越短，对应的条目越多。
+
+从刚添加的长度16的掩码的网段可以看出，dpdk的lpm算法有如下特点:
+
+1. 如果该掩码下没有rule组（如下图中的掩码2），此时需要根据前一个掩码位置来计算(图中根据掩码1所占用的rule空间来计算得到)
+
+![](lpm_resource/lpm_add5.png)
+
+2. 当找到空间后，由于所有的rule全部存储在一个大数组里，如果插入/删除元素需要移动后续元素。
+3. **插入元素时，并非将所有后续元素都后移一位**，而是每组移动一个（每组第一个移到下一组第一个位置），这样就可以减少内存拷贝的开销。(如下图)
+
+![](lpm_resource/lpm_add6.png)
+
+### LPM查找
+
+查找代码的具体实现见右侧，其实比较简单。大多数情况直接查找tbl24就可以，少部分需要二次查找。
+
+由于tbl_entry结构体本身是一个4字节的，这里直接当作uint32_t用，需要某个字段时和对应的标志作位运算。
+
+逻辑简单直接看代码:
+
+1. `ptbl = (const uint32_t *)(&lpm->tbl24[tbl24_index]);`查tbl24。
+2. 如果有需要`ptbl = (const uint32_t *)&lpm->tbl8[tbl8_index];`查tbl8。
+
+```c
+int rte_lpm_lookup(struct rte_lpm *lpm, uint32_t ip, uint32_t *next_hop)
+{
+	unsigned tbl24_index = (ip >> 8);
+	uint32_t tbl_entry;
+	const uint32_t *ptbl;
+
+	/* DEBUG: Check user input arguments. */
+	if((lpm == NULL) || (next_hop == NULL))
+		errno = -EINVAL;
+
+	/* Copy tbl24 entry */
+	ptbl = (const uint32_t *)(&lpm->tbl24[tbl24_index]);
+	tbl_entry = *ptbl;
+
+	/* Memory ordering is not required in lookup. Because dataflow
+	 * dependency exists, compiler or HW won't be able to re-order
+	 * the operations.
+	 */
+	/* Copy tbl8 entry (only if needed) */
+	//unlikely
+	if ((tbl_entry & RTE_LPM_VALID_EXT_ENTRY_BITMASK) ==
+			RTE_LPM_VALID_EXT_ENTRY_BITMASK) {
+
+		unsigned tbl8_index = (uint8_t)ip +
+				(((uint32_t)tbl_entry & 0x00FFFFFF) *
+						RTE_LPM_TBL8_GROUP_NUM_ENTRIES);
+
+		ptbl = (const uint32_t *)&lpm->tbl8[tbl8_index];
+		tbl_entry = *ptbl;
+	}
+
+	*next_hop = ((uint32_t)tbl_entry & 0x00FFFFFF);
+	return (tbl_entry & RTE_LPM_LOOKUP_SUCCESS) ? 0 : -ENOENT;
+}
+```
+
+下面看一个例子:
+
+1. 查找 192.168.3.0  nexthop=?
+
+![](lpm_resource/lpm_search1.png)
+
+根据代码，在tbl24中找到对应的索引，根据标记该表项没有tbl8，直接使用tbl24中的next hop，得到123
+
+2. 查找 192.168.3.0  nexthop=?
+
+![](lpm_resource/lpm_search2.png)
+
+这里还是查找192.168.3.0，只不过是这个时候有插入192.168.3.44/32基础上。这个时候查找3.44不用说，肯定查一次tbl24，一次tbl8。
+
+那么这个时候查找192.168.3.0，可以看到tbl24表中的下一条并不是我们想要的123，根据标志位`valid group`，知道有tbl8表，next hop对应的是第几个tbl8，然后在这个tbl8中，在用ip的低八位为索引找nexthop，这里其实查找192.168.3.0，是查了tbl24和tbl8两张表。最后的结果next hop是正确的但是由于dpdk 算法实现导致了子网存在包含关系的表查找效率下降了。
+
+### LPM删除
+
+路由的删除应该也是最能体现算法效率的地方。如何在删除一个路由后，能快速更新相关子网的路由信息这是问题的关键。(快速收敛)
+
+查找的主要流程如下图:
+
+![](lpm_resource/rte_lpm_del.png)
+
+`rule_info`和`rules_tbl`查找时候没有用上，但是插入时候还一直维护来着，这里就是为删除做准备的。
+
+下面可以看一下删除的过程:
+
+假如有路由表如图所示。(删除 192.168.3.0/24 前)
+
+![](lpm_resource/lpm_del1.png)
+
+接着将在该表中删除192.168.3.0/24，然后删除192.168.0.0/16。
+
+删除 192.168.3.0/24 后表如下图。
+
+![](lpm_resource/lpm_del2.png)
+
+删除后192.168.3.0对应的tbl8里面的所有内容都更新为.0.的下一条了。
+
+接着还原表，删除 192.168.0.0/16 前 。
+
+![](lpm_resource/lpm_del3.png)
+
+删除 192.168.0.0/16 后,lpm表如下图:
+
+![](lpm_resource/lpm_del4.png)
+
+这里可能会有疑惑，如果这个时候把192.168.3.44/32删除了，那么还会有tbl8吗?
+
+这里实验了一下，tbl8中的内容并没有删除，只是把tbl24中的valid group设为0。
+
+本文的所有代码我都实现了一份不依赖dpdk环境的，放在了 example-code/lpm中，编译方法`gcc -o lpm lpm.c main.c`。其中内存有不少注释方便理解。
+
+# 总结
+
+DPDK的LPM表核心是24-8双表查找，使用的话知道增，删，查即可。
