@@ -29,17 +29,17 @@ dpdk实战例子学习指南
 
 ### 2.dpdk涉及到的基础知识
 
-[1.numa知识扫盲](doc/source_doc/00_numa_basic.md)
+[1.网络虚拟化知识扫盲](doc/basic/00_virtual_basic.md)
 
-[2.dpdk怎么确定网卡rx与tx描述符](doc/source_doc/02_dpdk_tx_rx_config.md)
+[2.numa知识扫盲](doc/basic/01_numa_basic.md)
 
-[3.网络虚拟化知识扫盲](doc/basic/00_virtual_basic.md)
+[3.dpdk怎么确定网卡rx与tx描述符](doc/basic/02_dpdk_tx_rx_config.md)
 
-[4.dpdk内存均分优化实现分析](doc/source_doc/03_dpdk_mem_manager_optimize.md)
+[4.dpdk内存均分优化实现分析](doc/basic/03_dpdk_mem_manager_optimize.md)
 
 ### 3.dpdk官方案例源码分析
 
-[1.dpdk多线程浅析及其Hello World程序详解](doc/source_doc/01_dpdk_multi_threads.md)
+[1.dpdk多线程浅析及其Hello World程序详解](doc/example_doc/01_dpdk_multi_threads.md)
 
 [2.dpdk l2fwd源码分析](doc/example_doc/l2fwd.md)
 
@@ -49,7 +49,7 @@ dpdk实战例子学习指南
 
 ### 4.dpdk源码分析以及其最佳实践
 
-
+[00.dpdk中virtio驱动的实现分析](doc/)
 
 ## 杂项
 
