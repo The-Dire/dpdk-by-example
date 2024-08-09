@@ -29,7 +29,7 @@ dpdk实战例子学习指南
 
 ### 2.dpdk涉及到的基础知识
 
-[1.网络虚拟化知识扫盲](doc/basic/00_virtual_basic.md)
+[1.网络虚拟化知识扫盲](doc/basic/00_virtual_basic.md) -- 源码分析中会详解dpdk怎么实现virtio驱动的
 
 [2.numa知识扫盲](doc/basic/01_numa_basic.md)
 
@@ -49,7 +49,7 @@ dpdk实战例子学习指南
 
 ### 4.dpdk源码分析以及其最佳实践
 
-[00.dpdk中virtio驱动的实现分析](doc/)
+[2.dpdk虚拟网卡实现分析](doc/source_doc/01_dpdk_virtio.md)
 
 ## 杂项
 
