@@ -33,7 +33,7 @@ dpdk实战例子学习指南
 
 [2.dpdk怎么确定网卡rx与tx描述符](doc/source_doc/02_dpdk_tx_rx_config.md)
 
-[3.虚拟化知识扫盲](doc/basic/00_virtual_basic.md)
+[3.网络虚拟化知识扫盲](doc/basic/00_virtual_basic.md)
 
 [4.dpdk内存均分优化实现分析](doc/source_doc/03_dpdk_mem_manager_optimize.md)
 
