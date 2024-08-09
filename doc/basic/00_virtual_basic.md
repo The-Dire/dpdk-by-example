@@ -35,18 +35,21 @@ Virtio 涵盖多种类型的设备，包括网络接口 (virtio-net)、块设备
 
 半虚拟化中的virtio是IBM于2005年提出的一套方案，经过了十多年的发展，其驱动现在基本已经被主流的操作系统接纳编入内核，因此virtio也已经成为半虚拟化的一套事实标准。其主要结构如下图所示，前后端驱动通过虚拟队列通信，虚拟队列中又包含used ring、avail ring和desc ring。下一篇文章中会详解dpdk怎么实现virtio驱动的。
 
+
 ![图1 virtio环表.png](resource/virtio.png)
 
 
 ## virtio-net
 
 如下图所示，KVM负责为程序提供虚拟化硬件的内核模块，QEMU利用KVM模拟VM运行环境，包括处理器和外设等；Tap是内核中的虚拟以太网设备，可以理解为内核bridge。
-![图2 virtio-net.png](resource/virtio_net.png)
 
+
+![图2 virtio-net.png](resource/virtio_net.png)
 
 
 当客户机发送报文时，它会利用消息通知机制通知KVM，并退出到用户空间的QEMU进程，然后由QEMU对Tap设备进行读写（需要说明的是，QEMU是VM运行的主进程，因此才有退出这一说）。
 在该模型中，**宿主机、客户机和QEMU存在大量的上下文切换，以及频繁的数据拷贝、CPU特权级切换**，因此性能差强人意。其函数调用路径如下：
+
 ![图3 virtio-net数据包处理调用流程.png](resource/virtio_net_process.png)
 
 
@@ -57,7 +60,9 @@ Virtio 涵盖多种类型的设备，包括网络接口 (virtio-net)、块设备
 针对virtio-net的优化是把QEMU从消息队列的处理中解放出来，直接在宿主机实现了一个vhost-net内核模块，专门做virtio的后端，以此减少上下文切换和数据包拷贝。
 
 其结构如下图所示，以报文接收过程为例。数据通路直接从Tap设备接收数据报文，通过vhost-net内核模块把报文拷贝到虚拟队列中的数据区，从而使客户机接收报文。消息通路是当报文从Tap设备到达vhost-net时，通过KVM向客户机发送中断，通知客户机接收报文。
+
 ![图4 vhost-net.png](resource/vhost_net.png)
+
 
 
 **在数据通路层面，vhost-net减少了内存拷贝，但是由于其后端运行在内核态，仍然存在性能瓶颈。**
@@ -67,15 +72,18 @@ Virtio 涵盖多种类型的设备，包括网络接口 (virtio-net)、块设备
 vhost-user是采用DPDK用户态后端实现的高性能半虚拟化网络I/O。其实现机理与vhost-net类似，但是整个后端包括ovs（openvswitch） datapath全部置于用户空间，更好的利用DPDK加速。
 
 然而由于OVS进程是用户态进程，无权限访问客户机内存，因此需要使用共享内存技术，提前通过socket通信在客户机启动时，告知OVS自己的内存布局和virtio中虚拟队列信息等。这样OVS建立起对每个VM的共享内存，便可以在用户态实现上述vhost-net内核模块的功能。
-![图5 vhost-user.png](resource/vhost_user.png)
 
+
+![图5 vhost-user.png](resource/vhost_user.png)
 
 
 ### vDPA加速的vhost-user
 
 在DPDK加速的vhost-user方案中，还有一次内存拷贝。半虚拟化中仅剩的性能瓶颈也就在这一次拷贝中，intel推出了一款硬件解决方案，直接让网卡与客户机内的virtio虚拟队列交互，把数据包DMA到客户机buffer内，在支持了virtio标准的基础上实现了真正意义上的**零拷贝**。
 
+
 ![图6 vDPA.png](resource/vdpa.png)
+
 
 
 在18.05以后的DPDK版本中，已经有支持vDPA的feature供选择了。
@@ -92,6 +100,9 @@ vhost-user是采用DPDK用户态后端实现的高性能半虚拟化网络I/O。
 DPDK针对这两点问题都做了一定程度的解决。另外还提供了一种基于硬件的PF（物理功能）转VF（虚拟功能），这相当于在网卡层面上就已经有了虚拟化的概念，把一个网卡的PF虚拟成几十上百个VF，这样可以把不同的VF透传给不同的虚拟机，这就是我们最熟悉的SR-IOV。
 
 对于I/O透传在虚拟化环境中最严重的问题不是性能了，而是灵活性。客户机和网卡之间没有任何软件中间层过度，也就意味着不存在负责交换转发功能的I/O栈，也就不会有软件交换机。那么如果要想有一台server内部的软件交换功能如何实现呢。业界的主要做法是把交换功能完全下沉到网卡，直接在智能网卡上实现虚拟交换功能。这又带来了另一个问题，成本和性能的权衡。
+
+
 ![图7 SR-IOV.png](resource/SR-IOV.png)
+
 
 而DPDK 18.05以后的版本似乎也解决了这一灵活性问题，为了充分发掘标准网卡（区别于智能网卡）在flow（流）层面上的功能，推出了VF representer。可以直接将OVS上的流表规则下发到网卡上，实现网卡在VF之间的交换功能，这样就实现了高效灵活的虚拟化网络配置。
