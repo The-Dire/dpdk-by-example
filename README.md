@@ -37,6 +37,8 @@ dpdk实战例子学习指南
 
 [4.dpdk内存均分优化实现分析](doc/basic/03_dpdk_mem_manager_optimize.md)
 
+[5.simd初探](doc/basic/04_simd_beginner.md)
+
 ### 3.dpdk官方案例源码分析
 
 [1.dpdk多线程浅析及其Hello World程序详解](doc/example_doc/01_dpdk_multi_threads.md)
