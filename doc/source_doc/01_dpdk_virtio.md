@@ -53,7 +53,97 @@ static struct rte_vdev_driver pmd_vhost_drv = {
 
 第一层抽象为DPDK对于PCI-E设备的抽象。
 
-### 2.1 virtio_pic.h
+### 2.1 virtio_pci.h
 
 这里的代码类似于`ixgbe_type.h`往往是厂商提供的，具体来讲就是一款网卡芯片的各个寄存器的地址等(相当于是对于网卡芯片手册的代码版)。
+
+这里分为三大模块:
+
+1. virtio设备的配置相关宏定义
+2. 相关数据结构，主要是对设备的配置相关(前面两部分参考virtio标准文档)
+3. 函数声明，对外提供的操作接口(这部分是DPDK自己实现的)
+
+完整注释版基于19.08的代码在 [virtio_pci.h](src/virtio_pci.h) 。所有代码都是dpdk中摘抄的，没做任何改动。
+
+关于实现这块没有太多需要解释的，主要是针对头文件中定义的相关函数和操作进行实现，需要注意的是需要区分legacy和modern两种版本，下面简单看一个函数具体实现。
+
+### 2.2 virtio_pci.c
+
+同样注释版代码在 [virtio_pci.c](src/virtio_pci.c)
+
+这里需要讲解一个关键函数`vtpci_init`
+
+```c
+/*
+ * Return -1:
+ *   if there is error mapping with VFIO/UIO.
+ *   if port map error when driver type is KDRV_NONE.
+ *   if whitelisted but driver type is KDRV_UNKNOWN.
+ * Return 1 if kernel driver is managing the device.
+ * Return 0 on success.
+ */
+int
+vtpci_init(struct rte_pci_device *dev, struct virtio_hw *hw)
+{
+	/*
+	 * Try if we can succeed reading virtio pci caps, which exists
+	 * only on modern pci device. If failed, we fallback to legacy
+	 * virtio handling.
+	 */
+	if (virtio_read_caps(dev, hw) == 0) {
+		PMD_INIT_LOG(INFO, "modern virtio pci detected.");
+		virtio_hw_internal[hw->port_id].vtpci_ops = &modern_ops;
+		hw->modern = 1;
+		return 0;
+	}
+    /*如果失败，就尝试绑定legacy操作*/
+	PMD_INIT_LOG(INFO, "trying with legacy virtio pci.");
+	if (rte_pci_ioport_map(dev, 0, VTPCI_IO(hw)) < 0) {
+		rte_pci_unmap_device(dev);
+        //跳过内核管理的virtio
+		if (dev->kdrv == RTE_KDRV_UNKNOWN &&
+		    (!dev->device.devargs ||
+		     dev->device.devargs->bus !=
+		     rte_bus_find_by_name("pci"))) {
+			PMD_INIT_LOG(INFO,
+				"skip kernel managed virtio device.");
+			return 1;
+		}
+		return -1;
+	}
+
+	virtio_hw_internal[hw->port_id].vtpci_ops = &legacy_ops;
+	hw->modern   = 0;
+
+	return 0;
+}
+```
+
+这个函数实现了自动检测并绑定相应驱动的操作，优先绑定modern virtio。如果modern绑定失败尝试绑定legacy。
+
+怎么写驱动可以参考如下:
+
+
+```c
+// 略
+// modern virtio的ops注册
+const struct virtio_pci_ops modern_ops = {
+	.read_dev_cfg	= modern_read_dev_config,
+	.write_dev_cfg	= modern_write_dev_config,
+	.get_status	= modern_get_status,
+	.set_status	= modern_set_status,
+	.get_features	= modern_get_features,
+	.set_features	= modern_set_features,
+	.get_isr	= modern_get_isr,
+	.set_config_irq	= modern_set_config_irq,
+	.set_queue_irq  = modern_set_queue_irq,
+	.get_queue_num	= modern_get_queue_num,
+	.setup_queue	= modern_setup_queue,
+	.del_queue	= modern_del_queue,
+	.notify_queue	= modern_notify_queue,
+};
+```
+
+ops的具体实现就是函数指针所等于的函数，基本上来说照搬virtio的标准文档即可。
+
 
