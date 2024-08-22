@@ -373,6 +373,7 @@ igbuio_pci_setup_iomem(struct pci_dev *dev, struct uio_info *info,
 	} else {
 		internal_addr = NULL;
 	}
+	// IORESOURCE_MEM 内存信息填充 uio_info 中的 mem 字段
 	info->mem[n].name = name;
 	info->mem[n].addr = addr;
 	info->mem[n].internal_addr = internal_addr;
@@ -395,7 +396,7 @@ igbuio_pci_setup_ioport(struct pci_dev *dev, struct uio_info *info,
 	len = pci_resource_len(dev, pci_bar);
 	if (addr == 0 || len == 0)
 		return -EINVAL;
-
+	// IORESOURCE_IO 内存信息填充 uio_info 中的 port 字段
 	info->port[n].name = name;
 	info->port[n].start = addr;
 	info->port[n].size = len;
@@ -531,10 +532,10 @@ igbuio_pci_probe(struct pci_dev *dev, const struct pci_device_id *id)
 	// 调用 pci_set_drvdata 将 udev 设置为 pci 设备的私有数据
 	pci_set_drvdata(dev, udev);
 
-	/* 如果内核使用 iommu=pt 启动，则执行无害的 dma 映射以将设备附加到 iommu 身份映射。
+	/* 如果内核使用 iommu=pt 启动，则执行无害的 dma 映射以将设备附加到 iommu 映射。
 	 * Doing a harmless dma mapping for attaching the device to
 	 * the iommu identity mapping if kernel boots with iommu=pt.
-	 * Note this is not a problem if no IOMMU at all. 请注意，如果根本没有 IOMMU，下面逻辑等同于空。
+	 * Note this is not a problem if no IOMMU at all. 请注意，如果根本没有 IOMMU，下面代码依然没问题。
 	 */
 	map_addr = dma_alloc_coherent(&dev->dev, 1024, &map_dma_addr,
 			GFP_KERNEL);
