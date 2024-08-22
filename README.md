@@ -47,14 +47,26 @@ dpdk实战例子学习指南
 
 [3.dpdk lpm算法分析](doc/example_doc/dpdk_lpm.md)
 
+[4.dpdk常用结构TAILQ使用浅析](doc/example_doc/dpdk_tailq.md)
+
 有部分源码没写文档，因为比较重复只添加了注释可以自行查看。[dpdk example](example-code)
 
 ### 4.dpdk源码分析以及其最佳实践
 
-[2.dpdk虚拟网卡实现分析](doc/source_doc/01_dpdk_virtio.md)
+[0.dpdk igb_uio实现分析](doc/source_doc/00_igb_uio.md)
+
+[1.dpdk初始化实现分析](doc/source_doc/01_dpdk_init.md)
+
+[2.1.dpdk物理网卡收发包实现分析](doc/source_doc/02_1_dpdk_rxtx.md)
+
+[2.2.dpdk虚拟网卡收发包实现分析](doc/source_doc/02_2_dpdk_virtio.md)
+
+[3.dpdk解初始化实现分析]()
 
 ## 杂项
 
 [1.定制dpdk驱动(以修改设备mvpp2和pcie总线加载顺序为例)](doc/work_note/01_dpdk_modify_bus_load.md)
+
+[2.修改软件代码以支持网卡热插拔]()
 
 ### dpvs源码分析
