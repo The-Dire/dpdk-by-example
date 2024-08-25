@@ -40,3 +40,93 @@ dpdk 初始化过程相对复杂，这里只分析网卡接口初始化的流程
 
 ![](resource/dpdk_eal_init.png)
 
+### 3.1 注册设备驱动到rte_pci_bus.driver_list
+
+1. pci总线管理结构初始化driver_list
+
+首先DPDK使用rte_pci_bus这个全局变量来管理所有pci网卡驱动。
+
+dpdk pci初始化driver_list链表的代码如下:
+
+代码在drivers\bus\pci\pci_common.c内部
+
+```c
+struct rte_pci_bus rte_pci_bus = {
+	.bus = {
+		.scan = rte_pci_scan,
+		.probe = rte_pci_probe,
+		.find_device = pci_find_device,
+		.plug = pci_plug,
+		.unplug = pci_unplug,
+		.parse = pci_parse,
+		.dma_map = pci_dma_map,
+		.dma_unmap = pci_dma_unmap,
+		.get_iommu_class = rte_pci_get_iommu_class,
+		.dev_iterate = rte_pci_dev_iterate,
+		.hot_unplug_handler = pci_hot_unplug_handler,
+		.sigbus_handler = pci_sigbus_handler,
+	},
+	.device_list = TAILQ_HEAD_INITIALIZER(rte_pci_bus.device_list),
+	.driver_list = TAILQ_HEAD_INITIALIZER(rte_pci_bus.driver_list),
+};
+
+RTE_REGISTER_BUS(pci, rte_pci_bus.bus);
+```
+
+其中`.driver_list = TAILQ_HEAD_INITIALIZER(rte_pci_bus.driver_list),`则是初始化pci总线的driver_list链表。
+
+从bus文件夹中可以得知，dpdk支持dpaa，fslmc，ifpga，pci，vdev，vmbus这6种pci总线。其余总线注册设备驱动到对应的总线的`driver_list`流程是一样的。
+
+2. 注册DPDK PMD驱动然后挂在到`driver_list`上面
+
+以ixgbe为例，下面代码都在drivers\net\ixgbe\ixgbe_ethdev.c能找到。
+
+```c
+// probe ixgbe驱动
+static struct rte_pci_driver rte_ixgbe_pmd = {
+	.id_table = pci_id_ixgbe_map,
+	.drv_flags = RTE_PCI_DRV_NEED_MAPPING | RTE_PCI_DRV_INTR_LSC,
+	.probe = eth_ixgbe_pci_probe,
+	.remove = eth_ixgbe_pci_remove,
+};
+```
+
+上述代码就代表ixgbe实现了其对应的驱动。
+
+下面的代码则是将实现了的驱动注册到DPDK整个框架里。
+
+```c
+RTE_PMD_REGISTER_PCI(net_ixgbe, rte_ixgbe_pmd);
+RTE_PMD_REGISTER_PCI_TABLE(net_ixgbe, pci_id_ixgbe_map);
+RTE_PMD_REGISTER_KMOD_DEP(net_ixgbe, "* igb_uio | uio_pci_generic | vfio-pci");
+```
+
+其中核心是`RTE_PMD_REGISTER_PCI`宏。
+
+```c
+/** Helper for PCI device registration from driver (eth, crypto) instance */
+#define RTE_PMD_REGISTER_PCI(nm, pci_drv) \
+RTE_INIT(pciinitfn_ ##nm) \
+{\
+	(pci_drv).driver.name = RTE_STR(nm);\
+	rte_pci_register(&pci_drv); \
+} \
+RTE_PMD_EXPORT_NAME(nm, __COUNTER__)
+```
+
+该宏调用了`rte_pci_register`函数，作用就是把这个驱动注册到`rte_pci_bus.driver_list`中。
+
+```c
+void
+rte_pci_register(struct rte_pci_driver *driver)
+{
+	TAILQ_INSERT_TAIL(&rte_pci_bus.driver_list, driver, next);
+	driver->bus = &rte_pci_bus;
+}
+```
+
+这里要明确一点注册设备驱动的过程在main函数执行之前完成。 这样就有了设备驱动类型、设备驱动的初始化函数。在老版本DPDK 16.04及之前使用了GNU C提供的“attribute（constructor）”机制来保证注册驱动在前。
+
+新版本通过`RTE_REGISTER_BUS`宏机制保证了注册驱动在main函数之前。
+
+
