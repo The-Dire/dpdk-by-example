@@ -726,9 +726,8 @@ eal_intr_process_interrupts(struct epoll_event *events, int nfds)
 
 ## 9. uio设备控制中断过程分析
 
-4.9  准 UIO 设备控制中断过程
 对于标准的 uio 设备，通过向设备文件中写入 1 来使能中断，与之类似关闭中断的过程是向设备文件中写入 0。
-使用 uio 映射网卡到用户态时，网卡驱动会调用 uio_intr_enable 函数来使能 uio uio 中断。其代码摘录如下：
+使用 uio 映射网卡到用户态时，网卡驱动会调用 uio_intr_enable 函数来使能uio 中断。其代码摘录如下：
 
 ```c
 static int
