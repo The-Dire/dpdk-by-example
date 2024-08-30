@@ -954,89 +954,121 @@ txq->nb_tx_free = (uint16_t)(txq->nb_tx_free + nb_tx_to_clean);
 
 这样，就算清理完毕了。
 
+### 7.2实际发送流程
+
 接着继续看发送，依次处理每个要发送的数据包：
+
 取出数据包，取出其中的卸载标志
-ol_flags = tx_pkt->ol_flags;
 
-/* If hardware offload required */
-tx_ol_req = ol_flags & IXGBE_TX_OFFLOAD_MASK;
-if (tx_ol_req) {
-    tx_offload.l2_len = tx_pkt->l2_len;
-    tx_offload.l3_len = tx_pkt->l3_len;
-    tx_offload.l4_len = tx_pkt->l4_len;
-    tx_offload.vlan_tci = tx_pkt->vlan_tci;
-    tx_offload.tso_segsz = tx_pkt->tso_segsz;
-    tx_offload.outer_l2_len = tx_pkt->outer_l2_len;
-    tx_offload.outer_l3_len = tx_pkt->outer_l3_len;
+```c
+for (nb_tx = 0; nb_tx < nb_pkts; nb_tx++) {
 
-    /* If new context need be built or reuse the exist ctx. */
-    ctx = what_advctx_update(txq, tx_ol_req,
-        tx_offload);
-    /* Only allocate context descriptor if required*/
-    new_ctx = (ctx == IXGBE_CTX_NUM);
-    ctx = txq->ctx_curr;
+    // 取出其中的卸载标志
+    ol_flags = tx_pkt->ol_flags;
+
+    /* If hardware offload required */
+    tx_ol_req = ol_flags & IXGBE_TX_OFFLOAD_MASK;
+    if (tx_ol_req) {
+        tx_offload.l2_len = tx_pkt->l2_len;
+        tx_offload.l3_len = tx_pkt->l3_len;
+        tx_offload.l4_len = tx_pkt->l4_len;
+        tx_offload.vlan_tci = tx_pkt->vlan_tci;
+        tx_offload.tso_segsz = tx_pkt->tso_segsz;
+        tx_offload.outer_l2_len = tx_pkt->outer_l2_len;
+        tx_offload.outer_l3_len = tx_pkt->outer_l3_len;
+
+        /* If new context need be built or reuse the exist ctx. */
+        ctx = what_advctx_update(txq, tx_ol_req,
+            tx_offload);
+        /* Only allocate context descriptor if required*/
+        new_ctx = (ctx == IXGBE_CTX_NUM);
+        ctx = txq->ctx_curr;
+    }
 }
-这里卸载还要使用一个描述符，暂时不明白。
-计算了发送这个包需要的描述符数量，主要是有些大包会分成几个segment,每个segment
+```
+这里卸载还要使用一个描述符。
+
+接着计算了发送这个包需要的描述符数量，主要是有些大包会分成几个segment,每个segment
+```c
 nb_used = (uint16_t)(tx_pkt->nb_segs + new_ctx);
+```
+
 如果这次要用的数量加上设置RS之后积累的数量，又到达了tx_rs_thresh，那么就设置RS标志。
+```c
 if (txp != NULL &&
         nb_used + txq->nb_tx_used >= txq->tx_rs_thresh)
-/* set RS on the previous packet in the burst */
-txp->read.cmd_type_len |=
-    rte_cpu_to_le_32(IXGBE_TXD_CMD_RS);
-接下来要确保用足够可用的描述符
-如果描述符不够用了，就先进行清理回收，如果没能清理出空间，则把最后一个打上RS标志，更新队列尾寄存器，返回已经发送的数量。
-if (txp != NULL)
-        txp->read.cmd_type_len |= rte_cpu_to_le_32(IXGBE_TXD_CMD_RS);
+    /* set RS on the previous packet in the burst */
+    txp->read.cmd_type_len |=
+        rte_cpu_to_le_32(IXGBE_TXD_CMD_RS);
+```
 
-    rte_wmb();
+接下来要确保用足够可用的描述符。
+如果描述符不够用了直接跳转到函数末尾----先进行清理回收，如果没能清理出空间，则把最后一个打上RS标志，更新队列尾寄存器，返回已经发送的数量。
+
+```c
+end_of_tx:
+/* set RS on last packet in the burst */
+if (txp != NULL)
+    txp->read.cmd_type_len |= rte_cpu_to_le_32(IXGBE_TXD_CMD_RS);
+
+rte_wmb();
+
+/*
+    * Set the Transmit Descriptor Tail (TDT)
+    */
+PMD_TX_LOG(DEBUG, "port_id=%u queue_id=%u tx_tail=%u nb_tx=%u",
+        (unsigned) txq->port_id, (unsigned) txq->queue_id,
+        (unsigned) tx_id, (unsigned) nb_tx);
+IXGBE_PCI_REG_WRITE_RELAXED(txq->tdt_reg_addr, tx_id);
+txq->tx_tail = tx_id;
+```
+
+然后是判断就进入一个判断，`unlikely(nb_used > txq->tx_rs_thresh)`。
+
+其实驱动这里自己标明了unlikely,一个数据包会分为N多segment,当使用的描述符多于`txq->tx_rs_thresh`（默认是32）进入逻辑，但即使出现了这种情况，也没做更多的处理，只是说会影响性能，然后开始清理描述符，其实这跟描述符还剩多少没有关系，只是一个包占的描述符就超过了`tx_rs_thresh`,然而，并不见得是没有描述符了。所以，这时候清理描述符意义不明。
+
+下面的处理应该都是已经有充足的描述符了，如果卸载有标志，就填充对应的值。不详细说了。
+然后，就把数据包放到发送队列的sw_ring,并填充信息。
+
+```c
+m_seg = tx_pkt;
+do {
+    txd = &txr[tx_id];
+    txn = &sw_ring[txe->next_id];
+    rte_prefetch0(&txn->mbuf->pool);
+
+    if (txe->mbuf != NULL)
+        rte_pktmbuf_free_seg(txe->mbuf);
+    txe->mbuf = m_seg;
 
     /*
-     * Set the Transmit Descriptor Tail (TDT)
-     */
-    PMD_TX_LOG(DEBUG, "port_id=%u queue_id=%u tx_tail=%u nb_tx=%u",
-           (unsigned) txq->port_id, (unsigned) txq->queue_id,
-           (unsigned) tx_id, (unsigned) nb_tx);
-    IXGBE_PCI_REG_WRITE_RELAXED(txq->tdt_reg_addr, tx_id);
-    txq->tx_tail = tx_id;
-接下来的判断就很有意思了，
-unlikely(nb_used > txq->tx_rs_thresh)
-为什么说它奇怪呢？其实他自己都标明了unlikely,一个数据包会分为N多segment,多于txq->tx_rs_thresh（默认可是32啊），但即使出现了这种情况，也没做更多的处理，只是说会影响性能，然后开始清理描述符，其实这跟描述符还剩多少没有半毛钱关系，只是一个包占的描述符就超过了tx_rs_thresh,然而，并不见得是没有描述符了。所以，这时候清理描述符意义不明。
-下面的处理应该都是已经有充足的描述符了，如果卸载有标志，就填充对应的值。不详细说了。
-然后，就把数据包放到发送队列的sw_ring,并填充信息
-m_seg = tx_pkt;
-    do {
-        txd = &txr[tx_id];
-        txn = &sw_ring[txe->next_id];
-        rte_prefetch0(&txn->mbuf->pool);
+        * Set up Transmit Data Descriptor.
+        */
+    slen = m_seg->data_len;
+    buf_dma_addr = rte_mbuf_data_iova(m_seg);
+    txd->read.buffer_addr =
+        rte_cpu_to_le_64(buf_dma_addr);
+    txd->read.cmd_type_len =
+        rte_cpu_to_le_32(cmd_type_len | slen);
+    txd->read.olinfo_status =
+        rte_cpu_to_le_32(olinfo_status);
+    txe->last_id = tx_last;
+    tx_id = txe->next_id;
+    txe = txn;
+    m_seg = m_seg->next;
+} while (m_seg != NULL);
+```
 
-        if (txe->mbuf != NULL)
-            rte_pktmbuf_free_seg(txe->mbuf);
-        txe->mbuf = m_seg;
-
-        /*
-         * Set up Transmit Data Descriptor.
-         */
-        slen = m_seg->data_len;
-        buf_dma_addr = rte_mbuf_data_dma_addr(m_seg);
-        txd->read.buffer_addr =
-            rte_cpu_to_le_64(buf_dma_addr);
-        txd->read.cmd_type_len =
-            rte_cpu_to_le_32(cmd_type_len | slen);
-        txd->read.olinfo_status =
-            rte_cpu_to_le_32(olinfo_status);
-        txe->last_id = tx_last;
-        tx_id = txe->next_id;
-        txe = txn;
-        m_seg = m_seg->next;
-    } while (m_seg != NULL);
 这里是把数据包的每个segment都放到队列sw_ring，很关键的是设置DMA地址，设置数据包长度和卸载参数。
 一个数据包最后的segment的描述符需要一个EOP标志来结束。再更新剩余的描述符数：
+```c
 cmd_type_len |= IXGBE_TXD_CMD_EOP;
 txq->nb_tx_used = (uint16_t)(txq->nb_tx_used + nb_used);
 txq->nb_tx_free = (uint16_t)(txq->nb_tx_free - nb_used);
+```
 然后再次检查是否已经达到了tx_rs_thresh，并做处理
+```c
+/* Set RS bit only on threshold packets' last descriptor */
 if (txq->nb_tx_used >= txq->tx_rs_thresh) {
     PMD_TX_FREE_LOG(DEBUG,
             "Setting RS bit on TXD id="
@@ -1052,10 +1084,25 @@ if (txq->nb_tx_used >= txq->tx_rs_thresh) {
     txp = txd;
 
 txd->read.cmd_type_len |= rte_cpu_to_le_32(cmd_type_len);
-最后仍是做一下末尾的处理，更新队列尾指针。发送就结束啦！！
+```
+
+`txd->read.cmd_type_len |= rte_cpu_to_le_32(cmd_type_len);`
+
+
+最后仍是做一下末尾的处理，更新队列尾指针。发送就结束了。
+
+```c
 IXGBE_PCI_REG_WRITE_RELAXED(txq->tdt_reg_addr, tx_id);
 txq->tx_tail = tx_id;
+```
+
 
 # 总结
 
 可以看出数据包的发送和接收过程与驱动紧密相关，也与配置有关，尤其是对于收发队列的参数配置，将直接影响性能，可以根据实际进行调整。
+
+DPDK的收发包实现还是类似于内核驱动的实现那一套，只是核心是把物理地址直接赋值到软件sw_ring1再到应用程序mbuf。
+
+DPDK的优势也在于此:去除了内核与应用程序的区分，从而消除了二者交互带来的开销，即数据拷贝开销与软中断开销。
+
+当然这也是劣势，应用程序和驱动以及硬件耦合了起来，因此理解DPDK的驱动是很重要的部分。
