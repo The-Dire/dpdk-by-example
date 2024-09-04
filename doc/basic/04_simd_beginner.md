@@ -45,3 +45,196 @@ SIMD很快人们就发现了两个缺陷。
 
 # simd编程基础
 
+理解simd编程必须要先明白变量大小。
+
+1 byte(字节) = 8 bit(位)
+
+64位(bit)计算机8字节。因此字符串以8bytes来进行比较效率最高。
+
+|               | 32位                     | 64位                     |
+| ------------- | ------------------------ | ------------------------ |
+| char          | 1                        | 1                        |
+| short         | 2                        | 2                        |
+| int           | 4                        | 4                        |
+| long          | 4                        | 8                        |
+| long long     | 8                        | 8                        |
+| int8_t        | 1                        | 1                        |
+| int16_t       | 2                        | 2                        |
+| int32_t       | 4                        | 4                        |
+| int64_t       | 8                        | 8                        |
+| intptr_t      | 大小等于指针的带符号整数 | 大小等于指针的带符号整数 |
+| uint8_t       | 1                        | 1                        |
+| uint16_t(%u)  | 2                        | 2                        |
+| uint32_t(%zu) | 4                        | 4                        |
+| uint64_t      | 8                        | 8                        |
+| float         | 4                        | 4                        |
+| double        | 8                        | 8                        |
+| long double   | 16                       | 16                       |
+
+
+注意：上述最大的变量类型`long double`,16 bytes也就是96 bits。而`int64_t`是8 bytes为64 bits。simd使用的寄存器没有这么小的大小，因此simd使用的宽寄存器存储的被视为值数组。
+
+simd指令集中的变量(向量)一般来说通常为 256 bits宽，偶尔可能会使用 128 bits的版本。通常，这些宽寄存器(wide register)的变量会将被视为值数组。然后，他们将对数组中的每个值独立执行操作。在硬件中，这可以通过多个并行工作的 ALU 来实现。因此，尽管这些(单条)指令执行的算术比“正常”指令多很多倍，但它们与正常指令的开销一样。
+
+一般来说，将使用提供的“内部函数”访问这些指令。这些函数通常直接对应于特定的汇编指令。这将使程序员能够编写一致地访问此特殊功能的 C 代码，而不会失去 C 编译器的所有好处。
+
+
+# 使用到的API
+
+本文主要是在intel cpu的环境下阐述simd指令集，
+
+具体细节搜索"avx2"和"sse"以及"sse4.2"即可。这里说明下avx512大多数硬件支持不佳，不建议进行使用。
+
+英特尔的参考文献通常描述了伪代码中的指令，这些指令使用如下的符号:
+
+```c
+a[63:0] := b[127:64]
+```
+
+表示将向量b的bit位的64至127（含）分配给向量a的0至63 bit位。
+
+# 使用的头文件
+
+对于指令集需要使用以下函数导入头文件:
+
+注意：simd指令都是趋同的，会了一个另外一个会变得非常简单。
+
+```c
+#include <smmintrin.h>
+#include <immintrin.h>
+```
+
+# 在C语言中使用simd向量
+
+为了表示可能存储在 C 语言寄存器之一中的 256 bits大小的值，将使用以下类型之一：
+
+```c
+__m256  // 可以存储8个float类型C变量
+__m256d // 可以存储4个double类型C变量
+__m256i // 针对int类型，无论大小(但是由于int类型64位主机中占4bytes = 32bits因此其最大存储8个int类型C变量)
+```
+
+上述每一个类型都是256 bits大小的也就是32 bytes，因此如果要使用的函数需要“错误”的值类型，可以在这些类型之间进行转换。例如，可能想要使用旨在加载浮点值的函数来加载整数。在内部，需要这些类型的函数仅操作寄存器或内存中的 256 bits所对于的值。
+
+## 补充:128-bit 类型的指令集
+
+simd指令集依然提供了128-bit类型的指令集(16字节)，使用这部分变量将`__m256`替换为`__m128`就行了。
+
+
+## 赋值与得到值
+
+如果要赋值 128 位值中的常量，则需要使用simd函数之一。最简单的是，可以使用名称以 `_mm_setr` 开头的函数之一。例如：
+
+```c
+__m256i values = _mm256_setr_epi32(0x1234, 0x2345, 0x3456, 0x4567, 0x5678, 0x6789, 0x789A, 0x89AB);
+```
+
+上面的代码使得变量`values`包含 8 个 32 位整数：0x1234、0x2345、0x3456、0x4567、0x5678、0x6789、0x789A、0x89AB。然后可以通过执行以下操作来提取每个整数：
+
+```c
+int first_value = _mm256_extract_epi32(values, 0);
+// first_value == 0x1234
+int second_value = _mm256_extract_epi32(values, 1);
+// second_value == 0x2345
+```
+
+请注意，只能将常量索引传递给 `_mm256_extract_epi32`的第二个参数(类似函数同样是第二个参数)。
+
+## 加载和存储值
+
+要从内存加载值数组或将值数组存储到内存，可以使用以 `_mm256_loadu` 或 `_mm256_storeu` 开头的函数：
+
+```c
+int arrayA[8];
+_mm256_storeu_si256((__m128i*) arrayA, values);
+// arrayA[0] == 0x1234
+// arrayA[1] == 0x2345
+// ...
+
+int arrayB[8] = {10, 20, 30, 40, 50, 60, 70, 80};
+values = _mm256_loadu_si256((__m128i*) arrayB);
+// 10 == arrayB[0] == _mm256_extract_epi32(values, 0)
+// 20 == arrayB[1] == _mm256_extract_epi32(values, 1)
+// ...
+```
+
+其中`load`是让simd寄存器加载数组,`store`是把寄存器的值赋给数组。
+
+## 计算
+
+要实际对值执行算术运算，需要simd数学运算函数来执行。例如：
+
+```c
+__m256i first_values =  _mm256_setr_epi32(10, 20, 30, 40);
+__m256i second_values = _mm256_setr_epi32( 5,  6,  7,  8);
+__m256i result_values = _mm256_add_epi32(first_values, second_values);
+// _mm_extract_epi32(result_values, 0) == 15
+// _mm_extract_epi32(result_values, 1) == 26
+// _mm_extract_epi32(result_values, 2) == 37
+// _mm_extract_epi32(result_values, 3) == 48
+```
+
+这里得到的result_values为 15,26,37,48的数组。
+
+## 不同版本向量的值的表现形式
+
+这些示例将 256-bit 值视为 8 个 32-bit整数的数组(int类型4字节也就是32-bit)。
+
+有些指令处理许多不同类型的值，包括其他大小的整数或浮点数。通常，可以通过函数名称中指示值类型的内容来判断需要哪种类型。例如，`epi32`表示 `__m256` 中的`8 个 32-bit`值或 `__m128` 中的 4 个 `32-bit` 值（该名称代表extended packed integers, 32-bit）。
+
+其他类型的命令也是类似的，例子如下:
+
+- `si256` - 无符号256-bit 整型(32 bytes)
+- `si128` - 无符号128-bit 整型
+- `epi8`,`epi32`,`epi64` - 有符号8-bit整数数组（`__m256` 中为 32，`__m128` 中为 16）或有符号的32-bit或有符号的64-bit整型数组
+- `epu8` - 无符号 8-bit 整数的数组（当对有符号数和无符号数执行的操作之间存在差异时，例如转换为更大的整数或乘法）
+- `epu16`,`epu32` - 无符号 16-bit整数数组或 无符号 32-bit整数数组（当操作与有符号操作不同时）
+- `ps` - “packed single” -- 8 个单精度浮点数
+- `pd` - “packed double” -- 4 个doubles
+- `ss` - 1 个浮点数（仅使用 256-bit或 128-bit值中的 32 bits）
+- `sd` - 1 个双精度数 (使用 256-bit 或 128-bit 值的 64 bits)
+
+# 实际案例
+
+下面两个案例是完全一致的，两数组相加，其中相加的结果存入first_array。
+
+```c
+
+int add_no_AVX(int size, int *first_array, int *second_array) {
+    for (int i = 0; i < size; ++i) {
+        first_array[i] += second_array[i];
+    }
+}
+
+int add_AVX(int size, int *first_array, int *second_array) {
+    int i = 0;
+    for (; i + 8 <= size; i += 8) {
+        // 将数组的值加载到simd寄存器中
+        __m256i first_values = _mm_loadu_si256((__m256i*) &first_array[i]);
+        __m256i second_values = _mm_loadu_si256((__m256i*) &second_array[i]);
+        // 将 256-bit 块中的每对 32-bit 整数相加
+        // add each pair of 32-bit integers in the 256-bit chunks
+        first_values = _mm256_add_epi32(first_values, second_values);
+        
+        // 将 256-bit 块存储到第一个数组first_array
+        _mm_storeu_si256((__m256i*) &first_array[i], first_values);
+    }
+    // 剩余不是8个为一批次的，单个单个处理
+    for (; i < size; ++i) {
+        first_array[i] += second_array[i];
+    }
+}
+```
+
+上述代码之所以快是由于在数组数量大于8的情况下，进行了批处理操作`for (; i + 8 <= size; i += 8)`。换句话说，普通函数这么写编译器也能进行优化(但是利用不了simd寄存器)。
+
+
+
+# 总结
+
+从例子来看，simd指令集需要四个操作:
+
+1. 定义simd向量
+2. 读取数据
+3. 处理数据
+4. 回写数组到内存(普通变量，一般为数组)
