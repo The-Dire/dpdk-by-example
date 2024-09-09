@@ -68,8 +68,12 @@ simd收发包的优化可以参考DPDK的virtio_rxtx_simple_sse.c和virtio_rxtx_
 
 [4.dpdk解初始化实现分析](doc/source_doc/04_dpdk_ubind.md)
 
+[5.rte_mbuf实现分析](doc/source_doc/05_dpdk_rte_mbuf.md)
+
+[6.DPDK网卡控制api实现分析](doc/source_doc/06_dpdk_eth_control.md)
+
 ## 杂项
 
 [1.定制dpdk驱动(以修改设备mvpp2和pcie总线加载顺序为例)](doc/work_note/01_dpdk_modify_bus_load.md)
 
-[2.修改驱动和应用代码以支持网卡热插拔]()
+[2.修改驱动和应用代码以支持网卡热插拔](doc/work_note/02_dpdk_network_hot_swapping.md)
