@@ -28,7 +28,7 @@ _LDLIBS-$(CONFIG_RTE_LIBRTE_TEST_PMD)      += -lrte_pmd_test
 DIRS-$(CONFIG_RTE_LIBRTE_TEST_PMD) += test
 ```
 
-## 增加网讯网卡的驱动配置选项
+## 增加网卡的驱动配置选项
 
 修改config/common_base
 
