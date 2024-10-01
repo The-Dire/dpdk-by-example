@@ -19,11 +19,11 @@ dpdk实战例子学习指南
 
 [8.协议栈完结篇:实现tcp socket](doc/first/08_tcp_impl.md) -- 代码在src/example/08_tcp
 
+[9.dpdk常用核心api使用教程](doc/first/09_dpdk_api.md)
+
 [补充:arp基础知识](doc/first/arp_basic.md)
 
 [10G网卡的最大包转发率是怎么算出来的(包转发率)](doc/first/pps_compute.md)
-
-[dpdk常用核心api使用教程](doc/first/dpdk_api.md)
 
 ### 2.dpdk涉及到的基础知识
 
@@ -55,7 +55,6 @@ simd收发包的优化可以参考DPDK的virtio_rxtx_simple_sse.c和virtio_rxtx_
 
 ### 4.dpdk源码分析
 
-
 [0.dpdk igb_uio实现分析](doc/source_doc/00_igb_uio.md)
 
 [1.dpdk初始化实现分析](doc/source_doc/01_dpdk_init.md)
@@ -73,6 +72,8 @@ simd收发包的优化可以参考DPDK的virtio_rxtx_simple_sse.c和virtio_rxtx_
 [6.DPDK网卡控制api实现分析](doc/source_doc/06_dpdk_eth_control.md)
 
 [7.DPDK用户态驱动总线框架浅析](doc/source_doc/07_dpdk_bus_framework.md)
+
+[8.DPDK ring多生产多消费者无锁原理分析](doc/source_doc/08_dpdk_ring_lock_free.md)
 
 ## 杂项
 
